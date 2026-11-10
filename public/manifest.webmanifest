@@ -1,0 +1,16 @@
+{
+  "name": "GymSim",
+  "short_name": "GymSim",
+  "description": "A gamified fitness tracker built around a living body model.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f8f7",
+  "theme_color": "#1f7a6a",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,6 +1,6 @@
 import { COINS, SUB_AREAS, SYSTEMS, TUNING } from './config';
 import { addDays, dayRange, weekStart } from './dates';
-import type { AppState, Exercise, PriorityPin, SystemId, WorkoutLog } from './types';
+import type { AppState, Exercise, PriorityPin, SetEntry, SystemId, Workout } from './types';
 
 // ---------------------------------------------------------------------------
 // Scoring (PRD §6.2)
@@ -21,26 +21,70 @@ export function loadFactor(weightKg: number | undefined): number {
   return 1 + Math.min(kg, TUNING.loadCapKg) / TUNING.loadDivisor;
 }
 
-export function sessionUnits(ex: Exercise, log: Pick<WorkoutLog, 'sets' | 'reps' | 'weightKg' | 'minutes'>): number {
-  if (ex.kind === 'timed') return Math.max(0, log.minutes ?? 0);
-  const reps = Math.max(0, log.sets ?? 1) * Math.max(0, log.reps ?? 0);
-  return ex.usesWeight ? reps * loadFactor(log.weightKg) : reps;
+type SetLike = Pick<SetEntry, 'reps' | 'weightKg' | 'minutes'>;
+type LogLike = { sets?: number; reps?: number; weightKg?: number; minutes?: number };
+
+/** Effort units of one set: reps (× load) or minutes. */
+export function setUnits(ex: Exercise, set: SetLike): number {
+  if (ex.kind === 'timed') return Math.max(0, set.minutes ?? 0);
+  const reps = Math.max(0, set.reps ?? 0);
+  return ex.usesWeight ? reps * loadFactor(set.weightKg) : reps;
 }
 
-export function sessionPoints(ex: Exercise, log: Pick<WorkoutLog, 'sets' | 'reps' | 'weightKg' | 'minutes'>): number {
-  const units = sessionUnits(ex, log);
+/** Units of an exercise entry: the sum over its *done* sets. */
+export function entryUnits(ex: Exercise, sets: SetEntry[]): number {
+  return sets.reduce((sum, s) => (s.done ? sum + setUnits(ex, s) : sum), 0);
+}
+
+export function pointsFromUnits(ex: Exercise, units: number): number {
   if (units <= 0 || ex.standard <= 0) return 0;
   const ratio = Math.min(units / ex.standard, TUNING.maxRatio);
   return TUNING.sessionPoints * ratio ** TUNING.curve;
 }
 
-export function areaGains(ex: Exercise, log: Pick<WorkoutLog, 'sets' | 'reps' | 'weightKg' | 'minutes'>): Record<string, number> {
-  const pts = sessionPoints(ex, log);
+export function gainsFromUnits(ex: Exercise, units: number): Record<string, number> {
+  const pts = pointsFromUnits(ex, units);
   const maxW = Math.max(0, ...ex.mappings.map((m) => m.weight));
   const out: Record<string, number> = {};
   if (pts <= 0 || maxW <= 0) return out;
   for (const m of ex.mappings) out[m.areaId] = (out[m.areaId] ?? 0) + (pts * m.weight) / maxW;
   return out;
+}
+
+/** Area points for one exercise entry in a workout (ticked sets only). */
+export function entryGains(ex: Exercise, sets: SetEntry[]): Record<string, number> {
+  return gainsFromUnits(ex, entryUnits(ex, sets));
+}
+
+// Convenience forms taking "sets × reps @ kg" or minutes in one object.
+export function sessionUnits(ex: Exercise, log: LogLike): number {
+  if (ex.kind === 'timed') return setUnits(ex, { minutes: log.minutes });
+  return Math.max(0, log.sets ?? 1) * setUnits(ex, { reps: log.reps, weightKg: log.weightKg });
+}
+
+export function sessionPoints(ex: Exercise, log: LogLike): number {
+  return pointsFromUnits(ex, sessionUnits(ex, log));
+}
+
+export function areaGains(ex: Exercise, log: LogLike): Record<string, number> {
+  return gainsFromUnits(ex, sessionUnits(ex, log));
+}
+
+/** Total units per exercise per day, from every workout's ticked sets. */
+export function unitsByDay(workouts: Workout[], exercises: Record<string, Exercise>) {
+  const byDay = new Map<string, Map<string, number>>();
+  for (const w of workouts) {
+    for (const e of w.entries) {
+      const ex = exercises[e.exerciseId];
+      if (!ex) continue;
+      const u = entryUnits(ex, e.sets);
+      if (u <= 0) continue;
+      const day = byDay.get(w.date) ?? new Map<string, number>();
+      day.set(e.exerciseId, (day.get(e.exerciseId) ?? 0) + u);
+      byDay.set(w.date, day);
+    }
+  }
+  return byDay;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,20 +135,15 @@ function pinOn(pins: PriorityPin[], areaId: string, day: string) {
 
 export function computeBody(state: AppState, exercises: Record<string, Exercise>, today: string): BodyState {
   const { settings, pins } = state;
-  const logsByDay = new Map<string, WorkoutLog[]>();
+  // Same exercise twice in a day counts as one bigger session (diminishing returns apply).
+  const logsByDay = unitsByDay(state.workouts, exercises);
   let start = state.startDate;
-  for (const log of state.logs) {
-    if (log.date > today) continue;
-    if (log.date < start) start = log.date;
-    const list = logsByDay.get(log.date) ?? [];
-    list.push(log);
-    logsByDay.set(log.date, list);
-  }
+  for (const day of logsByDay.keys()) if (day < start && day <= today) start = day;
   if (start > today) start = today;
 
   const levels: Record<string, number> = {};
   const lastTrained: Record<string, string | undefined> = {};
-  for (const a of SUB_AREAS) levels[a.id] = TUNING.startLevel;
+  for (const a of SUB_AREAS) levels[a.id] = state.startLevels?.[a.id] ?? TUNING.startLevel;
 
   const ledger: CoinEntry[] = [];
   const recent: BodyState['recent'] = [];
@@ -128,12 +167,11 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
     }
 
     // 1. Gains from today's logs, capped per area per day.
-    const dayLogs = logsByDay.get(day) ?? [];
+    const dayUnits = day <= today ? logsByDay.get(day) : undefined;
     const dayGain: Record<string, number> = {};
-    for (const log of dayLogs) {
-      const ex = exercises[log.exerciseId];
-      if (!ex) continue;
-      for (const [areaId, g] of Object.entries(areaGains(ex, log))) {
+    for (const [exerciseId, units] of dayUnits ?? []) {
+      const ex = exercises[exerciseId];
+      for (const [areaId, g] of Object.entries(gainsFromUnits(ex, units))) {
         if (!(areaId in levels)) continue;
         dayGain[areaId] = (dayGain[areaId] ?? 0) + g;
       }
@@ -148,7 +186,7 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
 
     // 2. Consistency coins: training day + streak milestones.
     if (day === today) streakBeforeToday = streak;
-    if (dayLogs.length > 0) {
+    if (dayUnits && dayUnits.size > 0) {
       trainingDays++;
       streak++;
       longestStreak = Math.max(longestStreak, streak);

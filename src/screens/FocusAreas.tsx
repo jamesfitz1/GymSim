@@ -1,4 +1,4 @@
-import { Stepper } from '../components/ui';
+import { Icon, Stepper } from '../components/ui';
 import { SUB_AREAS, SYSTEMS } from '../domain/config';
 import type { BodyState } from '../domain/engine';
 import type { AppState } from '../domain/types';
@@ -14,23 +14,26 @@ export function Disclaimer() {
   );
 }
 
-export function Priorities({ state, body }: { state: AppState; body: BodyState }) {
+export function FocusAreas({ state, body, onBack }: { state: AppState; body: BodyState; onBack: () => void }) {
   const pins = new Map(state.pins.map((p) => [p.areaId, p]));
   const { decayPerDay, priorityDecayPerDay } = state.settings;
 
   return (
     <>
       <header className="topbar">
-        <div>
-          <h1>Priority areas</h1>
-          <p className="sub">Pin the areas you must not neglect</p>
+        <div className="row">
+          <button className="icon-btn" onClick={onBack} aria-label="Back">{Icon.back}</button>
+          <div>
+            <h1>Focus areas</h1>
+            <p className="sub">The areas you must not neglect</p>
+          </div>
         </div>
       </header>
 
       <Disclaimer />
 
       <p className="small muted" style={{ margin: '0 4px 12px' }}>
-        A pinned area gets a weekly points target and a spot on your dashboard. It also decays faster:
+        A focus area gets a weekly points target and a spot on your dashboard. It also decays faster:
         −{priorityDecayPerDay}/day instead of −{decayPerDay}/day, so missing it shows quickly. Hitting a weekly target earns 20 coins.
       </p>
 
@@ -54,7 +57,7 @@ export function Priorities({ state, body }: { state: AppState; body: BodyState }
                     aria-pressed={!!pin}
                     onClick={() => actions.togglePin(a.id)}
                   >
-                    {pin ? 'Pinned' : 'Pin'}
+                    {pin ? 'Focus ✓' : 'Add'}
                   </button>
                   {pin && (
                     <div className="row between" style={{ width: '100%', marginTop: 8 }}>

@@ -1,23 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { AREA_BY_ID, DEFAULT_SETTINGS, SUB_AREAS, TUNING } from './config';
 import { addDays, weekStart } from './dates';
-import { areaGains, computeBody, sessionPoints } from './engine';
+import { areaGains, computeBody, entryGains, sessionPoints } from './engine';
 import { SEED_EXERCISES } from './exercises';
-import type { AppState, WorkoutLog } from './types';
+import { logsToWorkouts, normaliseState } from './migrate';
+import type { AppState, LegacyStateV1, WorkoutLog } from './types';
 
 const EX = Object.fromEntries(SEED_EXERCISES.map((e) => [e.id, e]));
 const TODAY = '2026-11-11'; // a Wednesday
 
-function state(partial: Partial<AppState> = {}): AppState {
+const PROFILE = { id: 'p1', name: 'Test', createdAt: 0 };
+
+/** Builds a state; `logs` (one exercise per log) are turned into workouts. */
+function state(partial: Partial<AppState> & { logs?: WorkoutLog[] } = {}): AppState {
+  const { logs = [], ...rest } = partial;
   return {
-    version: 1,
+    version: 2,
+    profile: PROFILE,
     startDate: TODAY,
-    logs: [],
+    workouts: logsToWorkouts(logs, EX),
+    plans: [],
     customExercises: [],
     pins: [],
     purchases: [],
     settings: { ...DEFAULT_SETTINGS },
-    ...partial,
+    ...rest,
   };
 }
 
@@ -179,5 +186,129 @@ describe('streaks and coins', () => {
       TODAY,
     );
     expect(b.coinBalance).toBe(2);
+  });
+});
+
+describe('workouts (v0.2)', () => {
+  const W = (sets: { reps?: number; weightKg?: number; minutes?: number; done: boolean }[], exerciseId = 'push-up', date = TODAY) => ({
+    id: 'w', date, startedAt: 0, entries: [{ id: 'e', exerciseId, sets }],
+  });
+
+  it('only ticked sets score', () => {
+    const g = entryGains(EX['push-up'], [
+      { reps: 10, done: true },
+      { reps: 10, done: true },
+      { reps: 10, done: false },
+    ]);
+    expect(g.chest).toBeCloseTo(sessionPoints(EX['push-up'], { sets: 2, reps: 10 }) * 1);
+    const none = computeBody(state({ workouts: [W([{ reps: 10, done: false }])] }), EX, TODAY);
+    expect(none.levels.chest).toBe(TUNING.startLevel);
+    expect(none.trainingDays).toBe(0);
+  });
+
+  it('per-set weights are respected', () => {
+    const mixed = entryGains(EX['back-squat'], [
+      { reps: 5, weightKg: 100, done: true },
+      { reps: 5, weightKg: 0, done: true },
+    ]);
+    const light = entryGains(EX['back-squat'], [
+      { reps: 5, weightKg: 0, done: true },
+      { reps: 5, weightKg: 0, done: true },
+    ]);
+    expect(mixed.quads).toBeGreaterThan(light.quads);
+  });
+
+  it('splitting the same exercise across workouts in a day earns no extra', () => {
+    const one = computeBody(state({ workouts: [W([{ reps: 15, done: true }, { reps: 15, done: true }])] }), EX, TODAY);
+    const split = computeBody(
+      state({ workouts: [{ ...W([{ reps: 15, done: true }]), id: 'a' }, { ...W([{ reps: 15, done: true }]), id: 'b' }] }),
+      EX,
+      TODAY,
+    );
+    expect(split.levels.chest).toBeCloseTo(one.levels.chest);
+  });
+
+  it('an unfinished workout still counts its ticked sets', () => {
+    const b = computeBody(state({ workouts: [W([{ minutes: 20, done: true }], 'running')] }), EX, TODAY);
+    expect(b.levels.aerobic).toBeCloseTo(TUNING.startLevel + TUNING.sessionPoints);
+  });
+
+  it('uses starting levels from the health check', () => {
+    const b = computeBody(state({ startLevels: { quads: 55 } }), EX, TODAY);
+    expect(b.levels.quads).toBe(55);
+    expect(b.levels.chest).toBe(TUNING.startLevel);
+  });
+});
+
+describe('migration from v0.1', () => {
+  const v1: LegacyStateV1 = {
+    version: 1,
+    startDate: addDays(TODAY, -3),
+    onboardedAt: addDays(TODAY, -3),
+    logs: [
+      log('back-squat', addDays(TODAY, -2), { sets: 5, reps: 5, weightKg: 60 }),
+      log('running', addDays(TODAY, -2), { minutes: 20 }),
+      log('bird-dog', TODAY, { sets: 3, reps: 10 }),
+    ],
+    customExercises: [],
+    pins: [{ areaId: 'spinalStabilisers', since: addDays(TODAY, -3), weeklyTarget: 60 }],
+    purchases: [],
+    settings: { ...DEFAULT_SETTINGS },
+  };
+
+  it('groups logs into one workout per day with done sets', () => {
+    const s = normaliseState(v1, PROFILE, EX)!;
+    expect(s.version).toBe(2);
+    expect(s.workouts).toHaveLength(2);
+    const squat = s.workouts[0].entries.find((e) => e.exerciseId === 'back-squat')!;
+    expect(squat.sets).toHaveLength(5);
+    expect(squat.sets.every((x) => x.done && x.reps === 5 && x.weightKg === 60)).toBe(true);
+    const run = s.workouts[0].entries.find((e) => e.exerciseId === 'running')!;
+    expect(run.sets).toEqual([{ minutes: 20, done: true }]);
+    expect(s.pins).toHaveLength(1);
+  });
+
+  it('gives the same body state before and after migration', () => {
+    const migrated = normaliseState(v1, PROFILE, EX)!;
+    const direct = computeBody(state({ startDate: v1.startDate, logs: v1.logs, pins: v1.pins }), EX, TODAY);
+    const after = computeBody(migrated, EX, TODAY);
+    for (const a of SUB_AREAS) expect(after.levels[a.id]).toBeCloseTo(direct.levels[a.id]);
+    expect(after.coinsEarned).toBe(direct.coinsEarned);
+  });
+
+  it('rejects data that is not GymSim', () => {
+    expect(normaliseState({ hello: 'world' }, PROFILE, EX)).toBeNull();
+    expect(normaliseState(null, PROFILE, EX)).toBeNull();
+  });
+});
+
+describe('health check scoring', () => {
+  it('scores every area within bounds', async () => {
+    const { scoreAssessment, START_MIN, START_MAX } = await import('./assessment');
+    const s = scoreAssessment({});
+    for (const a of SUB_AREAS) {
+      expect(s[a.id]).toBeGreaterThanOrEqual(START_MIN);
+      expect(s[a.id]).toBeLessThanOrEqual(START_MAX);
+    }
+  });
+
+  it('fitter answers give higher starting levels in the tested areas', async () => {
+    const { scoreAssessment } = await import('./assessment');
+    const low = scoreAssessment({ activity: '0', pushups: '0', walk: '0', toeTouch: '0' });
+    const high = scoreAssessment({ activity: '3', pushups: '4', walk: '3', toeTouch: '4' });
+    for (const a of ['chest', 'aerobic', 'hamstringFlex', 'backMobility']) expect(high[a]).toBeGreaterThan(low[a]);
+  });
+
+  it('"not sure" falls back to the activity estimate', async () => {
+    const { scoreAssessment } = await import('./assessment');
+    const unsure = scoreAssessment({ activity: '2', pushups: 'unsure' });
+    const skipped = scoreAssessment({ activity: '2' });
+    expect(unsure.chest).toBe(skipped.chest);
+  });
+
+  it('suggests back focus areas only when the back is flagged', async () => {
+    const { suggestedFocus } = await import('./assessment');
+    expect(suggestedFocus({ condition: 'back' })).toContain('spinalStabilisers');
+    expect(suggestedFocus({ condition: 'none' })).toEqual([]);
   });
 });

@@ -1,21 +1,24 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Stepper, toast } from '../components/ui';
-import { APP_NAME, COINS, SKINS } from '../domain/config';
+import { APP_NAME, AREA_BY_ID, COINS, SKINS } from '../domain/config';
 import { formatDay } from '../domain/dates';
 import type { BodyState } from '../domain/engine';
 import type { AppState } from '../domain/types';
-import { actions, ownsSkin } from '../store';
-import { Disclaimer } from './Priorities';
+import { actions, ownsSkin, profiles } from '../store';
+import { Disclaimer, FocusAreas } from './FocusAreas';
 
 export function More({ state, body }: { state: AppState; body: BodyState }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [sub, setSub] = useState<'focus' | null>(null);
+
+  if (sub === 'focus') return <FocusAreas state={state} body={body} onBack={() => setSub(null)} />;
 
   const exportData = () => {
     const blob = new Blob([actions.exportJson()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${APP_NAME.toLowerCase()}-backup-${body.today}.json`;
+    a.download = `${APP_NAME.toLowerCase()}-${state.profile.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${body.today}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -33,9 +36,10 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
     <>
       <header className="topbar">
         <div>
-          <h1>You</h1>
-          <p className="sub">Coins, rewards and settings</p>
+          <h1>{state.profile.name}</h1>
+          <p className="sub">Profile, focus areas, rewards and settings</p>
         </div>
+        <button className="btn ghost small" onClick={() => profiles.close()}>Switch profile</button>
       </header>
 
       <div className="stats">
@@ -43,6 +47,20 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
         <div className="stat"><div className="value">{body.longestStreak}</div><div className="label">best streak</div></div>
         <div className="stat"><div className="value">{body.trainingDays}</div><div className="label">training days</div></div>
       </div>
+
+      <h2 className="section-title">Focus areas</h2>
+      <section className="card">
+        {state.pins.length === 0 ? (
+          <p className="small muted">No focus areas yet. Add the areas you've been told to work on, such as your lower back.</p>
+        ) : (
+          <div className="chips" style={{ marginBottom: 10 }}>
+            {state.pins.map((p) => (
+              <span key={p.areaId} className="tag pin">{AREA_BY_ID[p.areaId]?.name} · {p.weeklyTarget} pts/wk</span>
+            ))}
+          </div>
+        )}
+        <button className="btn ghost small" onClick={() => setSub('focus')}>Edit focus areas</button>
+      </section>
 
       <h2 className="section-title">Rewards</h2>
       <section className="card">
@@ -109,7 +127,10 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
 
       <h2 className="section-title">Your data</h2>
       <section className="card">
-        <p className="small muted">Everything is stored only on this device. Nothing is uploaded. Export a backup before you clear your browser or switch phones.</p>
+        <p className="small muted">
+          Everything is stored only on this device, in this browser. Nothing is uploaded. On iPhone, the home-screen app and Safari
+          keep separate data, so stick to one. Export a backup before you clear your browser or switch phones.
+        </p>
         <div className="grid-2">
           <button className="btn ghost" onClick={exportData}>Export backup</button>
           <button className="btn ghost" onClick={() => fileRef.current?.click()}>Restore backup</button>
@@ -129,10 +150,36 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
           className="btn danger block"
           style={{ marginTop: 8 }}
           onClick={() => {
-            if (confirm('Erase all workouts, pins and coins on this device? This cannot be undone.')) actions.reset();
+            if (confirm("Erase all of this profile's workouts, plans, focus areas and coins? The profile itself stays. This cannot be undone.")) actions.reset();
           }}
         >
-          Erase everything
+          Erase this profile's data
+        </button>
+      </section>
+
+      <h2 className="section-title">Profile</h2>
+      <section className="card">
+        <label className="field">
+          <span>Name</span>
+          <input
+            type="text"
+            defaultValue={state.profile.name}
+            onBlur={(e) => {
+              if (e.target.value.trim() && e.target.value.trim() !== state.profile.name) {
+                profiles.rename(e.target.value);
+                toast('Name updated');
+              }
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          />
+        </label>
+        <button
+          className="btn danger block"
+          onClick={() => {
+            if (confirm(`Delete the profile “${state.profile.name}” and all its workouts on this device? This cannot be undone.`)) profiles.deleteCurrent();
+          }}
+        >
+          Delete this profile
         </button>
       </section>
 

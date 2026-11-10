@@ -1,10 +1,10 @@
-// Data model (PRD §12-A). Entities: User (AppState + Settings), System, SubArea,
-// Exercise, ExerciseAreaMapping (AreaWeight), WorkoutLog, PriorityPin and the
-// CoinLedger (derived from logs + Purchase records).
+// Data model (PRD §12-A). Entities: Profile (AppState + Settings), System,
+// SubArea, Exercise, ExerciseAreaMapping (AreaWeight), Workout (entries of
+// sets), Plan, PriorityPin (focus area) and the CoinLedger (derived).
 //
-// Only *facts* are stored: what the user logged, pinned and bought. Every level,
+// Only *facts* are stored: what the user did, pinned and bought. Every level,
 // streak and coin balance is recomputed from those facts by the engine, so
-// deleting a log or retuning decay rewrites history consistently.
+// deleting a workout or retuning decay rewrites history consistently.
 
 export type SystemId = 'upper' | 'lower' | 'core' | 'back' | 'cardio' | 'mobility';
 
@@ -26,6 +26,16 @@ export type ExerciseKind = 'reps' | 'timed';
 
 export type ExerciseCategory = 'Strength' | 'Core & back' | 'Cardio' | 'Mobility';
 
+export type Equipment =
+  | 'Bodyweight'
+  | 'Dumbbell'
+  | 'Barbell'
+  | 'Kettlebell'
+  | 'Machine / cable'
+  | 'Band'
+  | 'Cardio machine'
+  | 'Other';
+
 /** ExerciseAreaMapping: one exercise feeds several sub-areas. Weights sum to 1. */
 export interface AreaWeight {
   areaId: string;
@@ -46,16 +56,51 @@ export interface Exercise {
    */
   standard: number;
   mappings: AreaWeight[];
+  equipment?: Equipment;
   custom?: boolean;
   /** Coins needed to unlock (PRD §6.5). Undefined = available from the start. */
   unlockCost?: number;
   hint?: string;
 }
 
+/** One set of an exercise. Only sets ticked `done` earn points. */
+export interface SetEntry {
+  reps?: number;
+  weightKg?: number;
+  minutes?: number;
+  done: boolean;
+}
+
+export interface WorkoutEntry {
+  id: string;
+  exerciseId: string;
+  sets: SetEntry[];
+}
+
+/** A training session: a list of exercises, each with its sets. */
+export interface Workout {
+  id: string;
+  /** Local calendar day, YYYY-MM-DD. */
+  date: string;
+  startedAt: number;
+  finishedAt?: number;
+  name?: string;
+  planId?: string;
+  entries: WorkoutEntry[];
+}
+
+/** A saved workout template ("Back rehab A"). Targets only, nothing ticked. */
+export interface Plan {
+  id: string;
+  name: string;
+  createdAt: number;
+  entries: { exerciseId: string; sets: Omit<SetEntry, 'done'>[] }[];
+}
+
+/** Legacy v0.1 single-exercise log, kept only for migration. */
 export interface WorkoutLog {
   id: string;
   exerciseId: string;
-  /** Local calendar day, YYYY-MM-DD. */
   date: string;
   loggedAt: number;
   sets?: number;
@@ -84,10 +129,37 @@ export interface Settings {
   skin: string;
 }
 
+export interface ProfileInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+/** Everything stored for one profile. */
 export interface AppState {
-  version: 1;
+  version: 2;
+  profile: ProfileInfo;
   onboardedAt?: string;
   /** Body model starts here; decay is replayed from this day. */
+  startDate: string;
+  /** Starting level per sub-area from the health check (else TUNING.startLevel). */
+  startLevels?: Record<string, number>;
+  /** Raw questionnaire answers, kept so the check can be reviewed later. */
+  assessment?: Record<string, string>;
+  workouts: Workout[];
+  activeWorkoutId?: string;
+  plans: Plan[];
+  customExercises: Exercise[];
+  /** Focus areas (formerly "priority areas"). */
+  pins: PriorityPin[];
+  purchases: Purchase[];
+  settings: Settings;
+}
+
+/** v0.1 shape, read only to migrate. */
+export interface LegacyStateV1 {
+  version: 1;
+  onboardedAt?: string;
   startDate: string;
   logs: WorkoutLog[];
   customExercises: Exercise[];

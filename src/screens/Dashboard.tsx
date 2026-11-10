@@ -115,7 +115,7 @@ export function Dashboard({ state, body, onLogForArea }: {
 
       {state.pins.length > 0 && (
         <>
-          <h2 className="section-title">Priority areas · this week</h2>
+          <h2 className="section-title">Focus areas · this week</h2>
           <section className="card">
             {state.pins.map((pin) => {
               const area = AREA_BY_ID[pin.areaId];
@@ -176,7 +176,7 @@ export function Dashboard({ state, body, onLogForArea }: {
                         <div className="sub-row">
                           <span className="row" style={{ minWidth: 0 }}>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                            {pinned.has(a.id) && <span className="tag pin">priority</span>}
+                            {pinned.has(a.id) && <span className="tag pin">focus</span>}
                           </span>
                           <LevelBar level={body.levels[a.id]} />
                           <span className="val num" style={{ textAlign: 'right' }}>{Math.round(body.levels[a.id])}</span>

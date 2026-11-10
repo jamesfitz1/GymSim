@@ -1,17 +1,31 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Icon, toast } from '../components/ui';
 import { AREA_BY_ID, SUB_AREAS, SYSTEMS } from '../domain/config';
-import type { BodyState } from '../domain/engine';
-import type { AppState, AreaWeight, Exercise, ExerciseCategory, ExerciseKind } from '../domain/types';
+import { formatDay, todayKey } from '../domain/dates';
+import { entryUnits, type BodyState } from '../domain/engine';
+import { bestSet, formatSets } from '../domain/format';
+import type { AppState, AreaWeight, Equipment, Exercise, ExerciseCategory, ExerciseKind } from '../domain/types';
 import { actions, allExercises, isUnlocked } from '../store';
+
+const EQUIPMENT: Equipment[] = ['Bodyweight', 'Dumbbell', 'Barbell', 'Kettlebell', 'Machine / cable', 'Band', 'Cardio machine', 'Other'];
 
 const CATEGORIES: ExerciseCategory[] = ['Core & back', 'Strength', 'Cardio', 'Mobility'];
 
 export function Library({ state, body }: { state: AppState; body: BodyState }) {
   const [adding, setAdding] = useState(false);
-  const exercises = allExercises(state);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [equipment, setEquipment] = useState<Equipment | 'All'>('All');
+  const all = allExercises(state);
+  const equipmentList = useMemo(() => EQUIPMENT.filter((eq) => all.some((e) => (e.equipment ?? 'Bodyweight') === eq)), [all]);
+  const q = query.trim().toLowerCase();
+  const exercises = all
+    .filter((e) => !q || e.name.toLowerCase().includes(q) || e.mappings.some((m) => AREA_BY_ID[m.areaId]?.name.toLowerCase().includes(q)))
+    .filter((e) => equipment === 'All' || (e.equipment ?? 'Bodyweight') === equipment);
 
   if (adding) return <AddCustom onDone={() => setAdding(false)} />;
+  const open = openId ? all.find((e) => e.id === openId) : undefined;
+  if (open) return <ExerciseDetail state={state} ex={open} onBack={() => setOpenId(null)} />;
 
   return (
     <>
@@ -23,6 +37,21 @@ export function Library({ state, body }: { state: AppState; body: BodyState }) {
         <button className="btn small" onClick={() => setAdding(true)}>+ Custom</button>
       </header>
 
+      <input
+        type="search"
+        placeholder={`Search ${all.length} exercises or a muscle`}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Search exercises"
+        style={{ marginBottom: 8 }}
+      />
+      <div className="chip-scroll" role="group" aria-label="Filter by equipment">
+        {(['All', ...equipmentList] as const).map((eq) => (
+          <button key={eq} className="chip-btn" aria-pressed={equipment === eq} onClick={() => setEquipment(eq)}>{eq}</button>
+        ))}
+      </div>
+      {exercises.length === 0 && <p className="empty">No exercises match.</p>}
+
       {CATEGORIES.map((cat) => {
         const list = exercises.filter((e) => e.category === cat);
         if (!list.length) return null;
@@ -31,7 +60,7 @@ export function Library({ state, body }: { state: AppState; body: BodyState }) {
             <h2 className="section-title">{cat}</h2>
             <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
               {list.map((ex) => (
-                <LibraryItem key={ex.id} ex={ex} unlocked={isUnlocked(state, ex)} balance={body.coinBalance} />
+                <LibraryItem key={ex.id} ex={ex} unlocked={isUnlocked(state, ex)} balance={body.coinBalance} onOpen={() => setOpenId(ex.id)} />
               ))}
             </section>
           </div>
@@ -41,13 +70,14 @@ export function Library({ state, body }: { state: AppState; body: BodyState }) {
   );
 }
 
-function LibraryItem({ ex, unlocked, balance }: { ex: Exercise; unlocked: boolean; balance: number }) {
+function LibraryItem({ ex, unlocked, balance, onOpen }: { ex: Exercise; unlocked: boolean; balance: number; onOpen: () => void }) {
   const maps = [...ex.mappings].sort((a, b) => b.weight - a.weight);
   return (
     <div className="list-item" style={{ alignItems: 'flex-start' }}>
-      <div className="grow">
+      <button className="grow" onClick={onOpen} style={{ all: 'unset', cursor: 'pointer', flex: 1, minWidth: 0 }} aria-label={`${ex.name}: details and progress`}>
         <div className="row wrap" style={{ gap: 6, marginBottom: 6 }}>
           <strong>{ex.name}</strong>
+          {ex.equipment && ex.equipment !== 'Bodyweight' && <span className="tag">{ex.equipment}</span>}
           {ex.custom && <span className="tag">custom</span>}
           {!unlocked && <span className="tag">🔒 {ex.unlockCost} coins</span>}
         </div>
@@ -62,7 +92,7 @@ function LibraryItem({ ex, unlocked, balance }: { ex: Exercise; unlocked: boolea
           Standard session: {ex.kind === 'timed' ? `${ex.standard} min` : `${ex.standard} reps`}
           {ex.usesWeight ? ' · weighted' : ''}
         </div>
-      </div>
+      </button>
       {!unlocked && (
         <button
           className="btn small"
@@ -86,6 +116,78 @@ function LibraryItem({ ex, unlocked, balance }: { ex: Exercise; unlocked: boolea
         </button>
       )}
     </div>
+  );
+}
+
+/** One exercise: what it trains, your best, and your history with it. */
+function ExerciseDetail({ state, ex, onBack }: { state: AppState; ex: Exercise; onBack: () => void }) {
+  const today = todayKey();
+  const sessions = state.workouts
+    .flatMap((w) => w.entries.filter((e) => e.exerciseId === ex.id && e.sets.some((s) => s.done)).map((e) => ({ w, e })))
+    .sort((a, b) => a.w.startedAt - b.w.startedAt);
+  const best = sessions
+    .map(({ e }) => bestSet(ex, e.sets))
+    .filter((b): b is NonNullable<typeof b> => !!b)
+    .sort((a, b) => b.value - a.value)[0];
+  const recent = sessions.slice(-12);
+  const volumes = recent.map(({ e }) => entryUnits(ex, e.sets));
+  const maxV = Math.max(1, ...volumes);
+  const maps = [...ex.mappings].sort((a, b) => b.weight - a.weight);
+
+  return (
+    <>
+      <header className="topbar">
+        <div className="row">
+          <button className="icon-btn" onClick={onBack} aria-label="Back to library">{Icon.back}</button>
+          <div>
+            <h1>{ex.name}</h1>
+            <p className="sub">{ex.category}{ex.equipment ? ` · ${ex.equipment}` : ''}</p>
+          </div>
+        </div>
+      </header>
+
+      <div className="stats">
+        <div className="stat"><div className="value">{sessions.length}</div><div className="label">sessions</div></div>
+        <div className="stat" style={{ gridColumn: 'span 2' }}>
+          <div className="value" style={{ fontSize: 18, lineHeight: 1.3 }}>{best?.label ?? '–'}</div>
+          <div className="label">best set</div>
+        </div>
+      </div>
+
+      <section className="card">
+        <h3>Trains</h3>
+        <div className="chips">
+          {maps.map((m) => (
+            <span className="chip" key={m.areaId}>{AREA_BY_ID[m.areaId]?.name} {Math.round(m.weight * 100)}%</span>
+          ))}
+        </div>
+        {ex.hint && <p className="small muted" style={{ margin: '8px 0 0' }}>{ex.hint}</p>}
+      </section>
+
+      {recent.length > 1 && (
+        <section className="card">
+          <h3>Volume per session</h3>
+          <div className="spark" role="img" aria-label={`Volume over your last ${recent.length} sessions`}>
+            {volumes.map((v, i) => (
+              <div key={i} title={`${formatDay(recent[i].w.date, today)}: ${Math.round(v)}`} style={{ height: `${Math.max(6, (v / maxV) * 100)}%` }} />
+            ))}
+          </div>
+          <p className="small muted" style={{ margin: '6px 0 0' }}>
+            {ex.kind === 'timed' ? 'Total minutes' : ex.usesWeight ? 'Reps weighted by load' : 'Total reps'} in each of your last {recent.length} sessions.
+          </p>
+        </section>
+      )}
+
+      <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
+        {sessions.length === 0 && <p className="empty">You haven't done this one yet.</p>}
+        {[...sessions].reverse().slice(0, 20).map(({ w, e }) => (
+          <div className="list-item" key={e.id}>
+            <span className="grow">{formatDay(w.date, today)}</span>
+            <span className="small muted">{formatSets(ex, e.sets.filter((s) => s.done))}</span>
+          </div>
+        ))}
+      </section>
+    </>
   );
 }
 

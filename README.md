@@ -17,8 +17,10 @@ npm test           # scoring-engine tests
 npm run build      # production build in dist/ (static files, host anywhere)
 ```
 
-To install it on a phone, deploy `dist/` to any static host over HTTPS, e.g.
-Netlify, Cloudflare Pages, Vercel or GitHub Pages. Then open the URL and:
+**Live app:** https://jamesfitz1.github.io/GymSim/. Every push to `main` is
+tested, built and deployed by `.github/workflows/deploy.yml`.
+
+To install it on your phone, open the link and:
 - **iPhone (Safari):** Share → Add to Home Screen
 - **Android (Chrome):** ⋮ → Install app
 

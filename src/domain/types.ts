@@ -127,6 +127,8 @@ export interface Settings {
   decayPerDay: number;
   priorityDecayPerDay: number;
   skin: string;
+  /** Body view on the dashboard. Defaults to 3D where supported. */
+  bodyView?: '3d' | '2d';
 }
 
 export interface ProfileInfo {

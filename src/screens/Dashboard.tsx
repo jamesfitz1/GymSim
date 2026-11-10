@@ -1,5 +1,20 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { BodyFigure } from '../components/BodyFigure';
+import { actions } from '../store';
+
+const Body3D = lazy(() => import('../components/Body3D'));
+let webgl: boolean | undefined;
+const hasWebGL = () => {
+  if (webgl === undefined) {
+    try {
+      const c = document.createElement('canvas');
+      webgl = !!(c.getContext('webgl2') || c.getContext('webgl'));
+    } catch {
+      webgl = false;
+    }
+  }
+  return webgl;
+};
 import { LevelBar, TrendTag } from '../components/ui';
 import { APP_NAME, AREA_BY_ID, levelBand, SUB_AREAS, SYSTEMS } from '../domain/config';
 import { daysBetween, formatDay } from '../domain/dates';
@@ -67,13 +82,29 @@ export function Dashboard({ state, body, onLogForArea }: {
       </div>
 
       <section className="card">
-        <BodyFigure
-          levels={body.levels}
-          cardioLevel={body.systemLevels.cardio}
-          pinned={pinned}
-          selected={selected}
-          onSelect={selectArea}
-        />
+        {(() => {
+          const figureProps = { levels: body.levels, cardioLevel: body.systemLevels.cardio, pinned, selected, onSelect: selectArea };
+          const can3d = hasWebGL();
+          const use3d = can3d && state.settings.bodyView !== '2d';
+          return (
+            <>
+              {use3d ? (
+                <Suspense fallback={<BodyFigure {...figureProps} />}>
+                  <Body3D {...figureProps} />
+                </Suspense>
+              ) : (
+                <BodyFigure {...figureProps} />
+              )}
+              {can3d && (
+                <div style={{ textAlign: 'center', marginTop: 6 }}>
+                  <button className="btn ghost small" onClick={() => actions.updateSettings({ bodyView: use3d ? '2d' : '3d' })}>
+                    {use3d ? 'Switch to 2D view' : 'Switch to 3D view'}
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
         {selected === 'cardio' ? (
           <div className="preview" style={{ marginTop: 12, marginBottom: 0 }}>
             <div className="row between">

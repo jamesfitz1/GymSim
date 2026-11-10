@@ -70,6 +70,6 @@ src/domain/engine.ts     scoring + day-by-day replay (levels, decay, streaks, co
 src/domain/engine.test.ts
 src/store.ts             localStorage persistence + actions
 src/screens/             Dashboard, LogWorkout, Library, Priorities, More (You), Onboarding
-src/components/          BodyFigure (rotating SVG avatar + cardio heart), small UI pieces
+src/components/          Body3D (three.js mannequin), BodyFigure (2D fallback), ExercisePicker, UI pieces
 public/                  manifest, icons, service worker (offline)
 ```

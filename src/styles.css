@@ -353,3 +353,7 @@ details > summary::-webkit-details-marker { display: none; }
 
 .spark { display: flex; align-items: flex-end; gap: 4px; height: 70px; }
 .spark > div { flex: 1; background: var(--accent); border-radius: 4px 4px 2px 2px; opacity: 0.85; }
+
+.body3d { width: 100%; max-width: 320px; height: min(440px, 62vh); margin: 0 auto; cursor: grab; user-select: none; -webkit-user-select: none; }
+.body3d:active { cursor: grabbing; }
+.body3d canvas { display: block; }

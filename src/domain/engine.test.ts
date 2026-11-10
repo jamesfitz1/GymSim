@@ -48,6 +48,11 @@ describe('seed exercise table', () => {
     expect(SEED_EXERCISES.filter((e) => !e.unlockCost).length).toBeGreaterThanOrEqual(20);
   });
 
+  it('has a library of 120+ exercises, each tagged with equipment', () => {
+    expect(SEED_EXERCISES.length).toBeGreaterThanOrEqual(120);
+    for (const ex of SEED_EXERCISES) expect(ex.equipment, ex.name).toBeTruthy();
+  });
+
   it('every sub-area can be trained by at least one starter exercise', () => {
     const covered = new Set(SEED_EXERCISES.filter((e) => !e.unlockCost).flatMap((e) => e.mappings.map((m) => m.areaId)));
     for (const a of SUB_AREAS) expect(covered.has(a.id), a.name).toBe(true);

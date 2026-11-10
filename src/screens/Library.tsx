@@ -199,6 +199,7 @@ interface Row {
 function AddCustom({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<ExerciseCategory>('Strength');
+  const [equipment, setEquipment] = useState<Equipment>('Bodyweight');
   const [kind, setKind] = useState<ExerciseKind>('reps');
   const [usesWeight, setUsesWeight] = useState(false);
   const [standard, setStandard] = useState('30');
@@ -217,6 +218,7 @@ function AddCustom({ onDone }: { onDone: () => void }) {
     actions.addCustomExercise({
       name: name.trim(),
       category,
+      equipment,
       kind,
       usesWeight: kind === 'reps' && usesWeight,
       standard: Number(standard),
@@ -248,6 +250,13 @@ function AddCustom({ onDone }: { onDone: () => void }) {
           <span>Category</span>
           <select value={category} onChange={(e) => setCategory(e.target.value as ExerciseCategory)}>
             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </label>
+
+        <label className="field">
+          <span>Equipment</span>
+          <select value={equipment} onChange={(e) => setEquipment(e.target.value as Equipment)}>
+            {EQUIPMENT.map((c) => <option key={c}>{c}</option>)}
           </select>
         </label>
 

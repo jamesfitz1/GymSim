@@ -23,13 +23,15 @@ export function Dashboard({ state, body, onLogForArea }: {
       return next;
     });
 
-  const selectArea = (areaId: string) => {
-    setSelected(areaId === selected ? null : areaId);
-    setOpen((prev) => new Set(prev).add(AREA_BY_ID[areaId].systemId));
+  // `id` is a sub-area, or 'cardio' when the heart is tapped.
+  const selectArea = (id: string) => {
+    setSelected(id === selected ? null : id);
+    setOpen((prev) => new Set(prev).add(AREA_BY_ID[id]?.systemId ?? id));
   };
 
   const sel = selected ? AREA_BY_ID[selected] : null;
   const lastSel = selected ? body.lastTrained[selected] : undefined;
+  const cardioSubs = SUB_AREAS.filter((a) => a.systemId === 'cardio');
 
   return (
     <>
@@ -65,8 +67,31 @@ export function Dashboard({ state, body, onLogForArea }: {
       </div>
 
       <section className="card">
-        <BodyFigure levels={body.levels} pinned={pinned} onSelect={selectArea} />
-        {sel ? (
+        <BodyFigure
+          levels={body.levels}
+          cardioLevel={body.systemLevels.cardio}
+          pinned={pinned}
+          selected={selected}
+          onSelect={selectArea}
+        />
+        {selected === 'cardio' ? (
+          <div className="preview" style={{ marginTop: 12, marginBottom: 0 }}>
+            <div className="row between">
+              <strong>♥ Cardio</strong>
+              <strong className="num">{Math.round(body.systemLevels.cardio)}</strong>
+            </div>
+            <div className="sub-rows" style={{ margin: '8px 0 10px' }}>
+              {cardioSubs.map((a) => (
+                <div className="sub-row" key={a.id}>
+                  <span>{a.name}</span>
+                  <LevelBar level={body.levels[a.id]} />
+                  <span className="val num" style={{ textAlign: 'right' }}>{Math.round(body.levels[a.id])}</span>
+                </div>
+              ))}
+            </div>
+            <button className="btn small" onClick={() => onLogForArea('cardio')}>Log cardio</button>
+          </div>
+        ) : sel ? (
           <div className="preview" style={{ marginTop: 12, marginBottom: 0 }}>
             <div className="row between">
               <strong>{sel.name}</strong>
@@ -84,7 +109,7 @@ export function Dashboard({ state, body, onLogForArea }: {
             </button>
           </div>
         ) : (
-          <p className="small muted" style={{ textAlign: 'center', margin: '10px 0 0' }}>Tap a muscle to see its level</p>
+          <p className="small muted" style={{ textAlign: 'center', margin: '10px 0 0' }}>Tap a muscle or the heart to see its level</p>
         )}
       </section>
 

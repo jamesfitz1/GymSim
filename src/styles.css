@@ -104,13 +104,34 @@ button, input, select { font: inherit; color: inherit; }
 .stat .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .stat .label { font-size: 12px; color: var(--muted); }
 
-/* Body figure */
-.figures { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.figure { text-align: center; }
-.figure svg { width: 100%; max-width: 170px; height: auto; display: block; margin: 0 auto; }
-.figure .caption { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.figure [data-area] { cursor: pointer; transition: opacity 0.15s; }
-.figure [data-area]:hover { opacity: 0.85; }
+/* Body figure: a turntable with front and back faces */
+.turntable {
+  position: relative;
+  width: min(230px, 62vw);
+  aspect-ratio: 200 / 420;
+  margin: 0 auto;
+  perspective: 1100px;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+.turntable:active { cursor: grabbing; }
+.spinner { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform; }
+.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.face.back { transform: rotateY(180deg); }
+.face svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.turntable [data-area] { cursor: pointer; }
+.heart-beat { transform-box: fill-box; transform-origin: center; animation: beat 1.6s ease-in-out infinite; }
+@keyframes beat {
+  0%, 40%, 100% { transform: scale(1); }
+  10% { transform: scale(1.16); }
+  20% { transform: scale(1); }
+  30% { transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .heart-beat { animation: none; }
+}
 .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: center; margin-top: 10px; font-size: 12px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }

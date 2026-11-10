@@ -27,7 +27,7 @@ To install it on your phone, open the link and:
 ## What's in v0.1 (PRD §12-G walking skeleton, plus a little more)
 
 - **Onboarding** with the medical-safety disclaimer (§9), and an optional choice of priority areas.
-- **Body dashboard:** front and back figure coloured by health, system bars that
+- **Body dashboard:** a rotating avatar (drag it, or tap Front/Back) with muscles coloured by health and a beating heart for Cardio, system bars that
   expand into sub-areas, "declining" flags, streak, coins, and areas trained this week.
 - **Log a workout:** sets × reps (× weight) or minutes, with a live preview of
   the points each area will get. You can backdate up to 6 days and delete entries.
@@ -70,6 +70,6 @@ src/domain/engine.ts     scoring + day-by-day replay (levels, decay, streaks, co
 src/domain/engine.test.ts
 src/store.ts             localStorage persistence + actions
 src/screens/             Dashboard, LogWorkout, Library, Priorities, More (You), Onboarding
-src/components/          BodyFigure (SVG body), small UI pieces
+src/components/          BodyFigure (rotating SVG avatar + cardio heart), small UI pieces
 public/                  manifest, icons, service worker (offline)
 ```

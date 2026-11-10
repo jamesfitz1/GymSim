@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Icon, toast } from '../components/ui';
-import { AREA_BY_ID, TUNING } from '../domain/config';
+import { AREA_BY_ID, SUB_AREAS, SYSTEMS, TUNING } from '../domain/config';
 import { addDays, formatDay, todayKey } from '../domain/dates';
 import { areaGains } from '../domain/engine';
 import type { AppState, Exercise, ExerciseCategory } from '../domain/types';
@@ -27,16 +27,21 @@ export function LogWorkout({ state, focusArea, onClearFocus }: {
 
   if (ex) return <LogForm ex={ex} onDone={() => setExId(null)} />;
 
+  // focusArea is a sub-area id or a whole system id (e.g. 'cardio' from the heart).
+  const focusIds = focusArea
+    ? AREA_BY_ID[focusArea]
+      ? [focusArea]
+      : SUB_AREAS.filter((a) => a.systemId === focusArea).map((a) => a.id)
+    : [];
+  const focusName = focusArea ? AREA_BY_ID[focusArea]?.name ?? SYSTEMS.find((s) => s.id === focusArea)?.name : undefined;
+  const focusWeight = (e: Exercise) =>
+    e.mappings.filter((m) => focusIds.includes(m.areaId)).reduce((sum, m) => sum + m.weight, 0);
+
   const q = query.trim().toLowerCase();
   const filtered = exercises
     .filter((e) => !q || e.name.toLowerCase().includes(q))
-    .filter((e) => !focusArea || e.mappings.some((m) => m.areaId === focusArea))
-    .sort((a, b) => {
-      if (!focusArea) return 0;
-      const wa = a.mappings.find((m) => m.areaId === focusArea)?.weight ?? 0;
-      const wb = b.mappings.find((m) => m.areaId === focusArea)?.weight ?? 0;
-      return wb - wa;
-    });
+    .filter((e) => !focusArea || focusWeight(e) > 0)
+    .sort((a, b) => (focusArea ? focusWeight(b) - focusWeight(a) : 0));
 
   const recentLogs = [...state.logs].sort((a, b) => b.date.localeCompare(a.date) || b.loggedAt - a.loggedAt).slice(0, 30);
   const today = todayKey();
@@ -61,7 +66,7 @@ export function LogWorkout({ state, focusArea, onClearFocus }: {
 
       {focusArea && (
         <div className="notice row between">
-          <span>Exercises for <strong>{AREA_BY_ID[focusArea]?.name}</strong>, strongest first</span>
+          <span>Exercises for <strong>{focusName}</strong>, strongest first</span>
           <button className="btn ghost small" onClick={onClearFocus}>Show all</button>
         </div>
       )}

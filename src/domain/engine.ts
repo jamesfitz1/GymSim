@@ -1,6 +1,6 @@
 import { COINS, dailyFade, SUB_AREAS, SYSTEMS, TUNING } from './config';
 import { addDays, dayRange, weekStart } from './dates';
-import type { AppState, Exercise, PriorityPin, SetEntry, SystemId, Workout } from './types';
+import type { AppState, Exercise, Injury, PriorityPin, SetEntry, SystemId, Workout } from './types';
 
 // ---------------------------------------------------------------------------
 // Scoring (PRD §6.2)
@@ -123,6 +123,13 @@ export interface BodyState {
   ledger: CoinEntry[];
   /** Level per area at the end of each of the last 14 days (oldest first). */
   recent: { date: string; levels: Record<string, number> }[];
+  /** Areas affected by an injury that's active today → those injury ids. */
+  injured: Record<string, string[]>;
+}
+
+/** Is the injury active on this day (started, and not yet marked recovered)? */
+export function injuryActiveOn(inj: Injury, day: string): boolean {
+  return inj.startDate <= day && (!inj.resolvedDate || day < inj.resolvedDate);
 }
 
 /** Share of a gain that lands at this level (1 at 0, shrinking towards the top). */
@@ -140,6 +147,7 @@ function pinOn(pins: PriorityPin[], areaId: string, day: string) {
 
 export function computeBody(state: AppState, exercises: Record<string, Exercise>, today: string): BodyState {
   const { settings, pins } = state;
+  const injuries = state.injuries ?? [];
   // Same exercise twice in a day counts as one bigger session (diminishing returns apply).
   const logsByDay = unitsByDay(state.workouts, exercises);
   let start = state.startDate;
@@ -169,6 +177,16 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
     if (wk !== weekKey) {
       weekKey = wk;
       weekGains = {};
+    }
+
+    // 0. Injuries: a one-off hit to each affected area on the start day (or on
+    //    the profile's first day, for an injury that began before it).
+    for (const inj of injuries) {
+      const hitsToday = inj.startDate === day || (day === start && inj.startDate < start && injuryActiveOn(inj, day));
+      if (!hitsToday) continue;
+      for (const areaId of inj.areaIds) {
+        if (areaId in levels) levels[areaId] = clamp(levels[areaId] - TUNING.injuryHit, 0, TUNING.maxLevel);
+      }
     }
 
     // 1. Gains from today's logs, capped per area per day.
@@ -220,7 +238,10 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
     // 4. Overnight decay (not yet applied for today): each area loses a
     //    percentage of its level, faster for cardio and for focus areas.
     if (day !== today) {
+      const resting = new Set(injuries.filter((i) => injuryActiveOn(i, day)).flatMap((i) => i.areaIds));
       for (const a of SUB_AREAS) {
+        // Injured areas don't fade while the injury is active: resting isn't neglect.
+        if (resting.has(a.id)) continue;
         const rate = dailyFade(a.fade, settings.decaySpeed, !!pinOn(pins, a.id, day));
         levels[a.id] = clamp(levels[a.id] * (1 - rate), 0, TUNING.maxLevel);
       }
@@ -239,6 +260,12 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
   const trend: Record<string, number> = {};
   const past = recent.length > TUNING.trendDays ? recent[recent.length - 1 - TUNING.trendDays] : recent[0];
   for (const a of SUB_AREAS) trend[a.id] = levels[a.id] - (past?.levels[a.id] ?? levels[a.id]);
+
+  const injured: Record<string, string[]> = {};
+  for (const inj of injuries) {
+    if (!injuryActiveOn(inj, today)) continue;
+    for (const areaId of inj.areaIds) injured[areaId] = [...(injured[areaId] ?? []), inj.id];
+  }
 
   const currentWeekGains = weekKey === thisWeek ? weekGains : {};
   const coinsEarned = ledger.reduce((s, e) => s + e.amount, 0);
@@ -260,6 +287,7 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
     coinBalance: coinsEarned - coinsSpent,
     ledger: ledger.reverse(),
     recent,
+    injured,
   };
 }
 

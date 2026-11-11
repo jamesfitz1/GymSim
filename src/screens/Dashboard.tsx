@@ -3,9 +3,10 @@ import { BodyFigure } from '../components/BodyFigure';
 import { LevelBar, TrendTag } from '../components/ui';
 import { APP_NAME, AREA_BY_ID, levelBand, SUB_AREAS, SYSTEMS } from '../domain/config';
 import { daysBetween, formatDay } from '../domain/dates';
-import { isDeclining, type BodyState } from '../domain/engine';
+import { injuryActiveOn, isDeclining, type BodyState } from '../domain/engine';
 import type { AppState } from '../domain/types';
 import { actions } from '../store';
+import { injuryTitle, PainSparkline } from './Injuries';
 
 const Body3D = lazy(() => import('../components/Body3D'));
 let webgl: boolean | undefined;
@@ -21,11 +22,14 @@ const hasWebGL = () => {
   return webgl;
 };
 
-export function Dashboard({ state, body, onLogForArea }: {
+export function Dashboard({ state, body, onLogForArea, onOpenInjuries }: {
   state: AppState;
   body: BodyState;
   onLogForArea: (areaId?: string) => void;
+  onOpenInjuries: () => void;
 }) {
+  const injuredAreas = new Set(Object.keys(body.injured));
+  const activeInjuries = state.injuries.filter((i) => injuryActiveOn(i, body.today));
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const pinned = new Set(state.pins.map((p) => p.areaId));
@@ -83,7 +87,7 @@ export function Dashboard({ state, body, onLogForArea }: {
 
       <section className="card">
         {(() => {
-          const figureProps = { levels: body.levels, cardioLevel: body.systemLevels.cardio, pinned, selected, onSelect: selectArea };
+          const figureProps = { levels: body.levels, cardioLevel: body.systemLevels.cardio, pinned, injured: injuredAreas, selected, onSelect: selectArea };
           const can3d = hasWebGL();
           const use3d = can3d && state.settings.bodyView !== '2d';
           return (
@@ -135,6 +139,17 @@ export function Dashboard({ state, body, onLogForArea }: {
               {lastSel ? `Last trained ${formatDay(lastSel, body.today).toLowerCase()}` : 'Not trained yet'} ·{' '}
               {levelBand(body.levels[sel.id]).label}
             </p>
+            {body.injured[sel.id] && (
+              <p className="small" style={{ margin: '-4px 0 10px', color: 'var(--danger)', fontWeight: 600 }}>
+                Injured:{' '}
+                {state.injuries
+                  .filter((i) => body.injured[sel.id].includes(i.id))
+                  .map((i) => `${injuryTitle(i)} since ${formatDay(i.startDate, body.today).toLowerCase()}`)
+                  .join('; ')}
+                . Not fading while you recover.{' '}
+                <button className="link-title" style={{ textDecoration: 'underline' }} onClick={onOpenInjuries}>View</button>
+              </p>
+            )}
             <button className="btn small" onClick={() => onLogForArea(sel.id)}>
               Log something for {sel.name.toLowerCase()}
             </button>
@@ -143,6 +158,31 @@ export function Dashboard({ state, body, onLogForArea }: {
           <p className="small muted" style={{ textAlign: 'center', margin: '10px 0 0' }}>Tap a muscle or the heart to see its level</p>
         )}
       </section>
+
+      {activeInjuries.length > 0 && (
+        <>
+          <h2 className="section-title">Injuries</h2>
+          <section className="card injury-card" style={{ paddingTop: 4, paddingBottom: 4 }}>
+            {activeInjuries.map((inj) => {
+              const latest = inj.pain[inj.pain.length - 1];
+              const days = daysBetween(inj.startDate, body.today);
+              return (
+                <button key={inj.id} className="ex-option" onClick={onOpenInjuries}>
+                  <span className="grow">
+                    <span style={{ display: 'block', fontWeight: 600 }}>{injuryTitle(inj)}</span>
+                    <span className="small muted">
+                      {days === 0 ? 'Since today' : `${days} day${days === 1 ? '' : 's'}`} · {inj.severity}
+                      {latest ? ` · pain ${latest.score}/10` : ' · no pain logged yet'}
+                    </span>
+                  </span>
+                  <PainSparkline pain={inj.pain} width={70} height={24} />
+                  <span className="muted" aria-hidden="true">›</span>
+                </button>
+              );
+            })}
+          </section>
+        </>
+      )}
 
       {state.pins.length > 0 && (
         <>

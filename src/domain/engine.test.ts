@@ -25,6 +25,7 @@ function state(partial: Partial<AppState> & { logs?: WorkoutLog[] } = {}): AppSt
     purchases: [],
     settings: { ...DEFAULT_SETTINGS },
     ...rest,
+    injuries: rest.injuries ?? [],
   };
 }
 
@@ -391,5 +392,68 @@ describe('health check v0.3', () => {
     const lifter = scoreAssessment({ activity: '2', strengthFreq: 'often3', cardioFreq: 'never', stretchFreq: 'never' });
     expect(lifter.quads).toBeGreaterThan(lifter.aerobic + 20);
     expect(lifter.quads).toBeGreaterThan(lifter.hipMobility + 20);
+  });
+});
+
+describe('injuries', () => {
+  const inj = (over: Partial<import('./types').Injury> = {}): import('./types').Injury => ({
+    id: 'i1', region: 'lower-back', side: 'none', areaIds: ['lowerBack', 'spinalStabilisers', 'backMobility'],
+    severity: 'moderate', startDate: TODAY, underCare: true, pain: [], ...over,
+  });
+
+  it('takes 10 off each affected area once, on the start day', () => {
+    const b = computeBody(state({ injuries: [inj()] }), EX, TODAY);
+    expect(b.levels.lowerBack).toBe(TUNING.startLevel - TUNING.injuryHit);
+    expect(b.levels.backMobility).toBe(TUNING.startLevel - TUNING.injuryHit);
+    expect(b.levels.quads).toBe(TUNING.startLevel);
+    expect(b.injured.lowerBack).toEqual(['i1']);
+  });
+
+  it('affected areas stop fading while active; others keep fading', () => {
+    const start = addDays(TODAY, -10);
+    const b = computeBody(state({ startDate: start, injuries: [inj({ startDate: start })] }), EX, TODAY);
+    expect(b.levels.lowerBack).toBe(TUNING.startLevel - TUNING.injuryHit);
+    expect(b.levels.quads).toBeLessThan(TUNING.startLevel - 5);
+  });
+
+  it('rehab during an injury still raises the area', () => {
+    const b = computeBody(state({ injuries: [inj()], logs: [log('bird-dog', TODAY, { sets: 3, reps: 10 })] }), EX, TODAY);
+    expect(b.levels.spinalStabilisers).toBeGreaterThan(TUNING.startLevel - TUNING.injuryHit);
+  });
+
+  it('normal fading resumes once recovered, and recovered injuries are not "injured" today', () => {
+    const start = addDays(TODAY, -10);
+    const resolved = addDays(TODAY, -5);
+    const b = computeBody(state({ startDate: start, injuries: [inj({ startDate: start, resolvedDate: resolved })] }), EX, TODAY);
+    const expected = (TUNING.startLevel - TUNING.injuryHit) * (1 - dailyFade('strength')) ** 5;
+    expect(b.levels.lowerBack).toBeCloseTo(expected);
+    expect(b.injured.lowerBack).toBeUndefined();
+  });
+
+  it('deleting an injury restores the levels it changed', () => {
+    const start = addDays(TODAY, -4);
+    const without = computeBody(state({ startDate: start }), EX, TODAY);
+    const withIt = computeBody(state({ startDate: start, injuries: [inj({ startDate: addDays(TODAY, -2) })] }), EX, TODAY);
+    expect(withIt.levels.lowerBack).not.toBeCloseTo(without.levels.lowerBack);
+    const after = computeBody(state({ startDate: start, injuries: [] }), EX, TODAY);
+    expect(after.levels.lowerBack).toBeCloseTo(without.levels.lowerBack);
+  });
+
+  it('an injury that began before the profile still hits once and pauses fading', () => {
+    const b = computeBody(state({ startDate: addDays(TODAY, -3), injuries: [inj({ startDate: addDays(TODAY, -30) })] }), EX, TODAY);
+    expect(b.levels.lowerBack).toBe(TUNING.startLevel - TUNING.injuryHit);
+  });
+
+  it('every injury region maps to real areas', async () => {
+    const { INJURY_REGIONS } = await import('./config');
+    for (const r of INJURY_REGIONS) {
+      expect(r.areas.length, r.name).toBeGreaterThan(0);
+      for (const a of r.areas) expect(AREA_BY_ID[a], `${r.name} → ${a}`).toBeDefined();
+    }
+  });
+
+  it('old saved profiles load with no injuries', () => {
+    const s = normaliseState({ ...state(), injuries: undefined }, PROFILE, EX)!;
+    expect(s.injuries).toEqual([]);
   });
 });

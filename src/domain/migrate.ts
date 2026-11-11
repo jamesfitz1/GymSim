@@ -43,6 +43,7 @@ export function fromV1(old: LegacyStateV1, profile: ProfileInfo, exercises: Reco
     plans: [],
     customExercises: custom,
     pins: old.pins ?? [],
+    injuries: [],
     purchases: old.purchases ?? [],
     settings: { ...DEFAULT_SETTINGS, ...old.settings },
   };
@@ -69,6 +70,7 @@ export function normaliseState(raw: unknown, profile: ProfileInfo, exercises: Re
       plans: s.plans ?? [],
       customExercises: s.customExercises ?? [],
       pins: s.pins ?? [],
+      injuries: s.injuries ?? [],
       purchases: s.purchases ?? [],
       settings: { ...DEFAULT_SETTINGS, ...s.settings },
     };

@@ -56,6 +56,13 @@ All the numbers live in [`src/domain/config.ts`](src/domain/config.ts), so they'
 | **H. Name** | **GymSim**. Set in `APP_NAME` (`config.ts`), `index.html` and `public/manifest.webmanifest`. Still worth a trademark and app-store availability check before launch. |
 | **I. Safety copy** | Shown in onboarding (it must be accepted), on the Priorities screen and on the You screen. The app suggests no exercises; it only tracks them. |
 
+## Injuries
+
+Log an injury from the **Injuries** tab (region, side, severity, start date, affected areas, notes). On its start day each affected
+area drops **10 points**, then it **stops fading** until you mark it recovered, so resting isn't counted as neglect (logged rehab still
+raises it). Injured parts pulse red on the body, exercises that load them show a warning, and you can log a 0–10 pain score each
+day to see the trend. GymSim never gives medical or exercise advice; it's a log to take to your clinician.
+
 ## Not in v1 (per PRD §7)
 
 No social features, no programme or medical guidance, no wearable or Health
@@ -70,7 +77,7 @@ src/domain/exercises.ts  seed exercise → area mapping table
 src/domain/engine.ts     scoring + day-by-day replay (levels, decay, streaks, coins)
 src/domain/engine.test.ts
 src/store.ts             localStorage persistence + actions
-src/screens/             Dashboard, LogWorkout, Library, Priorities, More (You), Onboarding
+src/screens/             Dashboard, Workout, Injuries, More (You), Profiles, FocusAreas
 src/components/          Body3D (three.js mannequin), BodyFigure (2D fallback), ExercisePicker, UI pieces
 public/                  manifest, icons, service worker (offline)
 ```

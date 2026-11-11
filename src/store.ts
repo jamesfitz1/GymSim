@@ -4,7 +4,7 @@ import { todayKey } from './domain/dates';
 import { computeBody } from './domain/engine';
 import { SEED_EXERCISES } from './domain/exercises';
 import { normaliseState } from './domain/migrate';
-import type { AppState, Exercise, Plan, PriorityPin, ProfileInfo, SetEntry, Settings, Workout, WorkoutEntry } from './domain/types';
+import type { AppState, Exercise, Injury, Plan, PriorityPin, ProfileInfo, SetEntry, Settings, Workout, WorkoutEntry } from './domain/types';
 
 // Local-only persistence (PRD §12-E). Several profiles can live on one device;
 // there are no logins. Storage layout:
@@ -59,6 +59,7 @@ export function blankState(profile: ProfileInfo): AppState {
     plans: [],
     customExercises: [],
     pins: [],
+    injuries: [],
     purchases: [],
     settings: { ...DEFAULT_SETTINGS },
   };
@@ -426,6 +427,51 @@ export const actions = {
   setWeeklyTarget(areaId: string, weeklyTarget: number) {
     const s = cur();
     set({ ...s, pins: s.pins.map((p) => (p.areaId === areaId ? { ...p, weeklyTarget } : p)) });
+  },
+
+  /** Adds any of these areas that aren't already focus areas. */
+  addFocusAreas(areaIds: string[]) {
+    const s = cur();
+    const have = new Set(s.pins.map((p) => p.areaId));
+    const today = todayKey();
+    const added = areaIds.filter((a) => !have.has(a)).map((areaId) => ({ areaId, since: today, weeklyTarget: TUNING.defaultWeeklyTarget }));
+    if (added.length) set({ ...s, pins: [...s.pins, ...added] });
+  },
+
+  // --- Injuries ----------------------------------------------------------------
+  saveInjury(injury: Omit<Injury, 'id' | 'pain'> & { id?: string }) {
+    const s = cur();
+    const existing = injury.id ? s.injuries.find((i) => i.id === injury.id) : undefined;
+    const next: Injury = { ...injury, id: existing?.id ?? `i-${uid()}`, pain: existing?.pain ?? [] };
+    set({ ...s, injuries: existing ? s.injuries.map((i) => (i.id === next.id ? next : i)) : [...s.injuries, next] });
+    return next.id;
+  },
+
+  /** Records today's pain score (0–10), replacing any earlier score today. */
+  logPain(injuryId: string, score: number) {
+    const s = cur();
+    const today = todayKey();
+    set({
+      ...s,
+      injuries: s.injuries.map((i) =>
+        i.id === injuryId ? { ...i, pain: [...i.pain.filter((p) => p.date !== today), { date: today, score }].sort((a, b) => a.date.localeCompare(b.date)) } : i,
+      ),
+    });
+  },
+
+  resolveInjury(injuryId: string, date = todayKey()) {
+    const s = cur();
+    set({ ...s, injuries: s.injuries.map((i) => (i.id === injuryId ? { ...i, resolvedDate: date } : i)) });
+  },
+
+  reopenInjury(injuryId: string) {
+    const s = cur();
+    set({ ...s, injuries: s.injuries.map((i) => (i.id === injuryId ? { ...i, resolvedDate: undefined } : i)) });
+  },
+
+  deleteInjury(injuryId: string) {
+    const s = cur();
+    set({ ...s, injuries: s.injuries.filter((i) => i.id !== injuryId) });
   },
 
   // --- Rewards & settings -----------------------------------------------------

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ExercisePicker } from '../components/ExercisePicker';
+import { ExerciseDetail } from '../components/ExerciseDetail';
+import { ExercisePicker, injuredAreasWorked, InjuryWarning } from '../components/ExercisePicker';
 import { Icon, toast } from '../components/ui';
 import { AREA_BY_ID } from '../domain/config';
 import { formatDay, todayKey } from '../domain/dates';
 import { entryGains, type BodyState } from '../domain/engine';
-import { formatDuration, formatSets, personalBests } from '../domain/format';
+import { bestSet, formatDuration, formatSets, personalBests } from '../domain/format';
 import type { AppState, Exercise, Plan, SetEntry, Workout } from '../domain/types';
 import { actions, activeWorkout, exerciseMap, lastEntryFor } from '../store';
 
@@ -14,7 +15,8 @@ type View =
   | { k: 'summary'; workoutId: string }
   | { k: 'plan'; planId: string }
   | { k: 'planPick'; planId: string }
-  | { k: 'detail'; workoutId: string };
+  | { k: 'detail'; workoutId: string }
+  | { k: 'progress'; exerciseId: string; back: View };
 
 export interface WorkoutIntent {
   /** Open the exercise picker filtered to this area or system. */
@@ -38,11 +40,20 @@ export function WorkoutTab({ state, body, intent }: { state: AppState; body: Bod
     window.scrollTo(0, 0);
   }, [view.k]);
 
+  const openProgress = (exerciseId: string) => setView({ k: 'progress', exerciseId, back: view });
+
+  if (view.k === 'progress') {
+    const ex = exercises[view.exerciseId];
+    if (ex) return <ExerciseDetail state={state} ex={ex} onBack={() => setView(view.back)} />;
+  }
+
   if (view.k === 'pick' && active) {
     return (
       <ExercisePicker
         state={state}
         focus={view.focus}
+        balance={body.coinBalance}
+        injured={body.injured}
         already={active.entries.map((e) => e.exerciseId)}
         onClose={() => setView({ k: 'main' })}
         onPick={(id) => {
@@ -61,6 +72,8 @@ export function WorkoutTab({ state, body, intent }: { state: AppState; body: Bod
         <ExercisePicker
           state={state}
           title="Add to plan"
+          balance={body.coinBalance}
+          injured={body.injured}
           already={plan.entries.map((e) => e.exerciseId)}
           onClose={() => setView({ k: 'plan', planId: plan.id })}
           onPick={(id) => {
@@ -104,6 +117,7 @@ export function WorkoutTab({ state, body, intent }: { state: AppState; body: Bod
           workout={w}
           exercises={exercises}
           canReopen={!active}
+          onOpenExercise={openProgress}
           onBack={() => setView({ k: 'main' })}
           onReopen={() => {
             actions.reopenWorkout(w.id);
@@ -119,6 +133,8 @@ export function WorkoutTab({ state, body, intent }: { state: AppState; body: Bod
         state={state}
         workout={active}
         exercises={exercises}
+        injured={body.injured}
+        onOpenExercise={openProgress}
         onAdd={() => setView({ k: 'pick' })}
         onFinished={(kept) => setView(kept ? { k: 'summary', workoutId: active.id } : { k: 'main' })}
       />
@@ -131,6 +147,7 @@ export function WorkoutTab({ state, body, intent }: { state: AppState; body: Bod
       exercises={exercises}
       onOpenPlan={(planId) => setView({ k: 'plan', planId })}
       onOpenWorkout={(workoutId) => setView({ k: 'detail', workoutId })}
+      onOpenExercise={openProgress}
     />
   );
 }
@@ -208,12 +225,14 @@ function planSummary(plan: Plan, exercises: Record<string, Exercise>) {
   return plan.entries.map((e) => exercises[e.exerciseId]?.name).filter(Boolean).join(' · ');
 }
 
-function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout }: {
+function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout, onOpenExercise }: {
   state: AppState;
   exercises: Record<string, Exercise>;
   onOpenPlan: (id: string) => void;
   onOpenWorkout: (id: string) => void;
+  onOpenExercise: (id: string) => void;
 }) {
+  const [showAllProgress, setShowAllProgress] = useState(false);
   const history = [...state.workouts].filter((w) => w.finishedAt).sort((a, b) => b.startedAt - a.startedAt);
   const last = history[0];
   const focus = new Set(state.pins.map((p) => p.areaId));
@@ -279,6 +298,8 @@ function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout }: {
         })}
       </section>
 
+      <ExerciseProgressList state={state} exercises={exercises} showAll={showAllProgress} onShowAll={() => setShowAllProgress(true)} onOpen={onOpenExercise} />
+
       <h2 className="section-title">History</h2>
       <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
         {history.length === 0 && <p className="empty">No workouts yet.</p>}
@@ -328,10 +349,12 @@ function workoutGains(w: Workout, exercises: Record<string, Exercise>) {
   return Object.entries(total).sort((a, b) => b[1] - a[1]);
 }
 
-function Session({ state, workout, exercises, onAdd, onFinished }: {
+function Session({ state, workout, exercises, injured, onOpenExercise, onAdd, onFinished }: {
   state: AppState;
   workout: Workout;
   exercises: Record<string, Exercise>;
+  injured: Record<string, string[]>;
+  onOpenExercise: (id: string) => void;
   onAdd: () => void;
   onFinished: (kept: boolean) => void;
 }) {
@@ -404,7 +427,10 @@ function Session({ state, workout, exercises, onAdd, onFinished }: {
           <section className="card" key={e.id}>
             <div className="row between" style={{ alignItems: 'flex-start' }}>
               <div className="grow">
-                <h3 style={{ margin: 0 }}>{ex?.name ?? 'Deleted exercise'}</h3>
+                <button className="link-title" onClick={() => ex && onOpenExercise(ex.id)} aria-label={`${ex?.name}: progress`}>
+                  <h3 style={{ margin: 0 }}>{ex?.name ?? 'Deleted exercise'}</h3>
+                </button>
+                <InjuryWarning areas={injuredAreasWorked(ex, injured)} />
                 <div className="small muted">
                   {last
                     ? `Last time (${formatDay(last.workout.date, workout.date).toLowerCase()}): ${formatSets(ex, last.entry.sets.filter((s) => s.done))}`
@@ -630,10 +656,11 @@ function PlanEditor({ plan, exercises, canStart, onBack, onAdd, onStart }: {
 // Past workout detail
 // ---------------------------------------------------------------------------
 
-function WorkoutDetail({ workout, exercises, canReopen, onBack, onReopen }: {
+function WorkoutDetail({ workout, exercises, canReopen, onOpenExercise, onBack, onReopen }: {
   workout: Workout;
   exercises: Record<string, Exercise>;
   canReopen: boolean;
+  onOpenExercise: (id: string) => void;
   onBack: () => void;
   onReopen: () => void;
 }) {
@@ -657,7 +684,9 @@ function WorkoutDetail({ workout, exercises, canReopen, onBack, onReopen }: {
         {workout.entries.map((e) => (
           <div className="list-item" key={e.id}>
             <div className="grow">
-              <div style={{ fontWeight: 600 }}>{exercises[e.exerciseId]?.name ?? 'Deleted exercise'}</div>
+              <button className="link-title" style={{ fontWeight: 600 }} onClick={() => exercises[e.exerciseId] && onOpenExercise(e.exerciseId)}>
+                {exercises[e.exerciseId]?.name ?? 'Deleted exercise'}
+              </button>
               <div className="small muted">{formatSets(exercises[e.exerciseId], e.sets.filter((s) => s.done))}</div>
             </div>
           </div>
@@ -695,6 +724,60 @@ function WorkoutDetail({ workout, exercises, canReopen, onBack, onReopen }: {
       >
         Delete workout
       </button>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Exercise progress: every exercise you've done, most recent first
+// ---------------------------------------------------------------------------
+
+function ExerciseProgressList({ state, exercises, showAll, onShowAll, onOpen }: {
+  state: AppState;
+  exercises: Record<string, Exercise>;
+  showAll: boolean;
+  onShowAll: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const today = todayKey();
+  const byExercise = new Map<string, { last: string; lastAt: number; count: number; best?: string; bestValue: number }>();
+  for (const w of state.workouts) {
+    for (const e of w.entries) {
+      const ex = exercises[e.exerciseId];
+      if (!ex || !e.sets.some((x) => x.done)) continue;
+      const b = bestSet(ex, e.sets);
+      const cur = byExercise.get(e.exerciseId) ?? { last: w.date, lastAt: 0, count: 0, bestValue: -1 };
+      cur.count++;
+      if (w.startedAt > cur.lastAt) Object.assign(cur, { last: w.date, lastAt: w.startedAt });
+      if (b && b.value > cur.bestValue) Object.assign(cur, { best: b.label, bestValue: b.value });
+      byExercise.set(e.exerciseId, cur);
+    }
+  }
+  const rows = [...byExercise.entries()].sort((a, b) => b[1].lastAt - a[1].lastAt);
+  if (!rows.length) return null;
+  const shown = showAll ? rows : rows.slice(0, 6);
+  return (
+    <>
+      <h2 className="section-title">Exercise progress</h2>
+      <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
+        {shown.map(([id, r]) => (
+          <button key={id} className="ex-option" onClick={() => onOpen(id)}>
+            <span className="grow">
+              <span style={{ display: 'block', fontWeight: 600 }}>{exercises[id]?.name}</span>
+              <span className="small muted">
+                {r.count} session{r.count === 1 ? '' : 's'} · last {formatDay(r.last, today).toLowerCase()}
+                {r.best ? ` · best ${r.best}` : ''}
+              </span>
+            </span>
+            <span className="muted" aria-hidden="true">›</span>
+          </button>
+        ))}
+        {!showAll && rows.length > shown.length && (
+          <button className="btn ghost small" style={{ margin: '8px 0' }} onClick={onShowAll}>
+            Show all {rows.length}
+          </button>
+        )}
+      </section>
     </>
   );
 }

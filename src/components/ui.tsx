@@ -83,6 +83,12 @@ export const Icon = {
       <path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5" />
     </svg>
   ),
+  injury: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="8" width="19" height="8" rx="4" transform="rotate(-45 12 12)" />
+      <path d="M10.5 10.5h.01M13.5 13.5h.01M13.5 10.5h.01M10.5 13.5h.01" />
+    </svg>
+  ),
   trash: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />

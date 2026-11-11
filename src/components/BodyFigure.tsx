@@ -45,6 +45,8 @@ interface FigureProps {
   levels: Record<string, number>;
   cardioLevel: number;
   pinned: Set<string>;
+  /** Areas with an active injury: they pulse red. */
+  injured?: Set<string>;
   selected: string | null;
   onSelect?: (id: string) => void;
 }
@@ -63,14 +65,16 @@ function Muscle({ area, props, children }: { area: string; props: FigureProps; c
   const band = levelBand(level);
   const isPinned = props.pinned.has(area);
   const isSelected = props.selected === area;
+  const isInjured = !!props.injured?.has(area);
   return (
     <g
       data-area={area}
+      className={isInjured && !isSelected ? 'injured' : undefined}
       onClick={() => props.onSelect?.(area)}
       fill={band.color}
-      stroke={isSelected ? 'var(--text)' : isPinned ? 'var(--accent)' : 'rgba(255,255,255,0.75)'}
-      strokeWidth={isSelected ? 2.6 : isPinned ? 2.2 : 1}
-      strokeDasharray={isPinned && !isSelected ? '4 2.5' : undefined}
+      stroke={isSelected ? 'var(--text)' : isInjured ? 'var(--danger)' : isPinned ? 'var(--accent)' : 'rgba(255,255,255,0.75)'}
+      strokeWidth={isSelected ? 2.6 : isInjured ? 2.6 : isPinned ? 2.2 : 1}
+      strokeDasharray={isPinned && !isSelected && !isInjured ? '4 2.5' : undefined}
       strokeLinejoin="round"
     >
       <title>{`${AREA_BY_ID[area]?.name ?? area}: ${Math.round(level)} (${band.label})`}</title>
@@ -78,6 +82,29 @@ function Muscle({ area, props, children }: { area: string; props: FigureProps; c
     </g>
   );
 }
+
+/** Mobility as a dotted line: each [x, y] is drawn on the left and mirrored to the right. */
+function Dots({ area, points, props, single }: { area: string; points: [number, number][]; props: FigureProps; single?: boolean }) {
+  return (
+    <Muscle area={area} props={props}>
+      {points.flatMap(([x, y], i) => [
+        <circle key={`l${i}`} cx={x} cy={y} r={3.4} />,
+        ...(single ? [] : [<circle key={`r${i}`} cx={200 - x} cy={y} r={3.4} />]),
+      ])}
+      {/* Wider invisible hit area so the dots are easy to tap. */}
+      {points.flatMap(([x, y], i) => [
+        <circle key={`hl${i}`} cx={x} cy={y} r={7} fill="transparent" stroke="none" />,
+        ...(single ? [] : [<circle key={`hr${i}`} cx={200 - x} cy={y} r={7} fill="transparent" stroke="none" />]),
+      ])}
+    </Muscle>
+  );
+}
+
+const SHOULDER_DOTS: [number, number][] = [[46, 111], [48, 100], [54, 92], [63, 86], [72, 84]];
+const HIP_FRONT_DOTS: [number, number][] = [[71, 229], [78, 232], [85, 234.5], [92, 237]];
+const HIP_BACK_DOTS: [number, number][] = [[64, 206], [63, 215], [64, 224]];
+const HAMSTRING_DOTS: [number, number][] = [[66, 246], [65, 258], [65.5, 270], [67, 282], [69, 294]];
+const SPINE_DOTS: [number, number][] = [104, 118, 132, 146, 160, 174, 188].map((y) => [100, y]);
 
 function Heart({ x, faded, props }: { x: number; faded?: boolean; props: FigureProps }) {
   const band = levelBand(props.cardioLevel);
@@ -162,6 +189,8 @@ function FrontFigure(props: FigureProps) {
         <Pair d={FOREARM} />
       </Muscle>
       <Muscle area="shoulders" props={props}><Pair d={SHOULDER} /></Muscle>
+      <Dots area="shoulderMobility" points={SHOULDER_DOTS} props={props} />
+      <Dots area="hipMobility" points={HIP_FRONT_DOTS} props={props} />
       <Heart x={113} props={props} />
       <Shoes laces />
     </svg>
@@ -184,6 +213,10 @@ function BackFigure(props: FigureProps) {
         <Pair d={FOREARM} />
       </Muscle>
       <Muscle area="shoulders" props={props}><Pair d={SHOULDER} /></Muscle>
+      <Dots area="backMobility" points={SPINE_DOTS} props={props} single />
+      <Dots area="shoulderMobility" points={SHOULDER_DOTS} props={props} />
+      <Dots area="hipMobility" points={HIP_BACK_DOTS} props={props} />
+      <Dots area="hamstringFlex" points={HAMSTRING_DOTS} props={props} />
       <Heart x={87} faded props={props} />
       <Shoes />
     </svg>
@@ -360,10 +393,17 @@ export function BodyFigure(props: FigureProps) {
           </span>
         ))}
         <span>♥ Cardio</span>
+        <span>••• Mobility</span>
+        {props.injured && props.injured.size > 0 && (
+          <span>
+            <i className="swatch" style={{ boxShadow: '0 0 0 2px var(--danger)' }} />
+            Injured
+          </span>
+        )}
         {props.pinned.size > 0 && (
           <span>
             <i className="swatch" style={{ border: '2px dashed var(--accent)' }} />
-            Priority
+            Focus
           </span>
         )}
       </div>

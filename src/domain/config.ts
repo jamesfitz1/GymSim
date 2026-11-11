@@ -80,7 +80,32 @@ export const TUNING = {
   focusFadeMultiplier: 1.5,
   /** Default weekly target for a newly pinned priority area (≈ 3 sessions). */
   defaultWeeklyTarget: 60,
+  /** One-off drop applied to each affected area on an injury's start day. */
+  injuryHit: 10,
+  /** An exercise "works" an injured area if it puts at least this weight on it. */
+  injuryWarnWeight: 0.2,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Injuries: body regions a user can pick, and the sub-areas each one affects.
+// The affected areas are only a starting point; the user can change them.
+// ---------------------------------------------------------------------------
+export const INJURY_REGIONS: { id: string; name: string; areas: string[]; sided: boolean }[] = [
+  { id: 'lower-back', name: 'Lower back', areas: ['lowerBack', 'spinalStabilisers', 'backMobility'], sided: false },
+  { id: 'upper-back', name: 'Upper back / neck', areas: ['lats', 'spinalStabilisers', 'backMobility'], sided: false },
+  { id: 'shoulder', name: 'Shoulder', areas: ['shoulders', 'shoulderMobility'], sided: true },
+  { id: 'arm', name: 'Elbow / wrist / hand', areas: ['arms'], sided: true },
+  { id: 'chest', name: 'Chest / ribs', areas: ['chest', 'obliques'], sided: true },
+  { id: 'abdomen', name: 'Abdomen / hip flexor', areas: ['abs', 'hipMobility'], sided: false },
+  { id: 'hip', name: 'Hip / groin', areas: ['glutes', 'hipMobility'], sided: true },
+  { id: 'hamstring', name: 'Hamstring', areas: ['hamstrings', 'hamstringFlex'], sided: true },
+  { id: 'thigh', name: 'Thigh (quad)', areas: ['quads'], sided: true },
+  { id: 'knee', name: 'Knee', areas: ['quads', 'hamstringFlex'], sided: true },
+  { id: 'calf', name: 'Calf / Achilles', areas: ['calves'], sided: true },
+  { id: 'ankle', name: 'Ankle / foot', areas: ['calves'], sided: true },
+];
+
+export const INJURY_REGION_BY_ID = Object.fromEntries(INJURY_REGIONS.map((r) => [r.id, r]));
 
 /**
  * Decay (PRD §6.3). Each night an area loses a percentage of its level, set by

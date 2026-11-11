@@ -158,8 +158,33 @@ export interface AppState {
   customExercises: Exercise[];
   /** Focus areas (formerly "priority areas"). */
   pins: PriorityPin[];
+  injuries: Injury[];
   purchases: Purchase[];
   settings: Settings;
+}
+
+export type InjurySeverity = 'mild' | 'moderate' | 'severe';
+export type InjurySide = 'left' | 'right' | 'both' | 'none';
+
+/**
+ * A logged injury. While active (startDate ≤ day < resolvedDate), its areas
+ * take a one-off hit on the start day and then stop fading.
+ */
+export interface Injury {
+  id: string;
+  /** Key into INJURY_REGIONS. */
+  region: string;
+  side: InjurySide;
+  /** Sub-areas affected (pre-filled from the region, editable). */
+  areaIds: string[];
+  severity: InjurySeverity;
+  startDate: string;
+  /** Day it was marked recovered; absent while active. */
+  resolvedDate?: string;
+  underCare: boolean;
+  notes?: string;
+  /** Pain check-ins, at most one per day. */
+  pain: { date: string; score: number }[];
 }
 
 /** v0.1 shape, read only to migrate. */

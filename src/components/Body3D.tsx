@@ -59,9 +59,19 @@ const PARTS: Part[] = [
   { area: 'calves', geo: 'capsule', size: [0.055, 0.15], pos: [0.09, 0.32, -0.018], pair: true },
 
   // --- mobility -------------------------------------------------------------
-  { area: 'shoulderMobility', geo: 'torus', size: [0.085, 0.011], pos: [0.2, 1.41, 0], rot: [0, Math.PI / 2, 0], pair: true, joint: true },
-  { area: 'hipMobility', geo: 'torus', size: [0.092, 0.011], pos: [0.09, 0.84, 0], rot: [Math.PI / 2, 0, 0], pair: true, joint: true },
-  { area: 'hamstringFlex', geo: 'torus', size: [0.066, 0.01], pos: [0.09, 0.5, 0], rot: [Math.PI / 2, 0, 0], pair: true, joint: true },
+  // Every mobility area is a dotted line of beads, like the spine.
+  // Shoulder: an arc over the top of each shoulder, front to back.
+  ...[-70, -35, 0, 35, 70].map((deg): Part => {
+    const t = (deg * Math.PI) / 180;
+    return { area: 'shoulderMobility', geo: 'sphere', size: [0.019], pos: [0.205, 1.41 + 0.095 * Math.cos(t), 0.095 * Math.sin(t)], pair: true, joint: true };
+  }),
+  // Hip: around the front and outside of each hip crease.
+  ...[-35, 5, 45, 85, 125].map((deg): Part => {
+    const t = (deg * Math.PI) / 180;
+    return { area: 'hipMobility', geo: 'sphere', size: [0.018], pos: [0.09 + 0.1 * Math.sin(t), 0.845, 0.1 * Math.cos(t)], pair: true, joint: true };
+  }),
+  // Hamstring flexibility: a line down the back of each thigh.
+  ...[0.8, 0.735, 0.67, 0.605, 0.54].map((y): Part => ({ area: 'hamstringFlex', geo: 'sphere', size: [0.018], pos: [0.09, y, -0.1], pair: true, joint: true })),
   ...[1.0, 1.09, 1.18, 1.27, 1.36].map(
     (y): Part => ({ area: 'backMobility', geo: 'sphere', size: [0.02], pos: [0, y, -0.122], joint: true }),
   ),
@@ -111,11 +121,20 @@ export interface Body3DProps {
   levels: Record<string, number>;
   cardioLevel: number;
   pinned: Set<string>;
+  /** Areas with an active injury: they pulse red. */
+  injured?: Set<string>;
   selected: string | null;
   onSelect?: (id: string) => void;
 }
 
-export default function Body3D({ levels, cardioLevel, pinned, selected, onSelect }: Body3DProps) {
+const INJURY_RED = 0xd1495b;
+
+export default function Body3D({ levels, cardioLevel, pinned, injured, selected, onSelect }: Body3DProps) {
+  // Read by the render loop, which is created once.
+  const injuredRef = useRef<Set<string>>(injured ?? new Set());
+  injuredRef.current = injured ?? new Set();
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const hostRef = useRef<HTMLDivElement>(null);
   const api = useRef<{
     meshes: { mesh: THREE.Mesh; part: Part }[];
@@ -233,6 +252,16 @@ export default function Body3D({ levels, cardioLevel, pinned, selected, onSelect
         const beat = t < 0.12 ? 1 + 0.18 * Math.sin((t / 0.12) * Math.PI) : t > 0.22 && t < 0.34 ? 1 + 0.1 * Math.sin(((t - 0.22) / 0.12) * Math.PI) : 1;
         heart.scale.setScalar(beat);
       }
+      // Injured areas pulse red slowly (steady glow with reduced motion).
+      if (injuredRef.current.size) {
+        const glow = reducedMotion() ? 0.5 : 0.2 + 0.45 * (0.5 + 0.5 * Math.sin((now / 2400) * Math.PI * 2));
+        for (const { mesh, part } of meshes) {
+          if (!injuredRef.current.has(part.area!) || selectedRef.current === part.area) continue;
+          const mat = mesh.material as THREE.MeshStandardMaterial;
+          mat.emissive.setHex(INJURY_RED);
+          mat.emissiveIntensity = glow;
+        }
+      }
       updateSide();
       render();
       raf = requestAnimationFrame(loop);
@@ -343,12 +372,13 @@ export default function Body3D({ levels, cardioLevel, pinned, selected, onSelect
       const isSel = selected === area;
       const isPinned = area === 'cardio' ? cardioPinned : pinned.has(area);
       if (isSel) mat.emissive.set(0xffffff), (mat.emissiveIntensity = 0.38);
+      else if (injured?.has(area)) mat.emissive.setHex(INJURY_RED), (mat.emissiveIntensity = 0.5);
       else if (isPinned) mat.emissive.set(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1f7a6a'), (mat.emissiveIntensity = 0.28);
       else if (part.joint) mat.emissive.set(levelBand(level).color), (mat.emissiveIntensity = 0.25);
       else mat.emissive.set(0x000000), (mat.emissiveIntensity = 0);
     }
     a.render();
-  }, [levels, cardioLevel, pinned, selected]);
+  }, [levels, cardioLevel, pinned, injured, selected]);
 
   const showSide = (s: 'front' | 'back') => {
     const a = api.current;
@@ -379,7 +409,13 @@ export default function Body3D({ levels, cardioLevel, pinned, selected, onSelect
           </span>
         ))}
         <span>♥ Cardio</span>
-        <span>◯ Mobility</span>
+        <span>••• Mobility</span>
+        {injured && injured.size > 0 && (
+          <span>
+            <i className="swatch" style={{ background: '#d1495b', boxShadow: '0 0 6px #d1495b' }} />
+            Injured
+          </span>
+        )}
         {pinned.size > 0 && (
           <span>
             <i className="swatch" style={{ boxShadow: '0 0 0 2px var(--accent)' }} />

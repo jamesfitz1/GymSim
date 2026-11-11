@@ -2,18 +2,18 @@ import { useEffect, useState } from 'react';
 import { Icon, Toaster } from './components/ui';
 import { SKINS } from './domain/config';
 import { Dashboard } from './screens/Dashboard';
-import { Library } from './screens/Library';
+import { InjuriesTab } from './screens/Injuries';
 import { More } from './screens/More';
 import { ProfilePicker } from './screens/Profiles';
 import { WorkoutTab, type WorkoutIntent } from './screens/Workout';
 import { activeWorkout, useAppState, useBody, useCurrentState } from './store';
 
-type Tab = 'body' | 'workout' | 'library' | 'more';
+type Tab = 'body' | 'workout' | 'injuries' | 'more';
 
 const TABS: { id: Tab; label: string; icon: JSX.Element }[] = [
   { id: 'body', label: 'Body', icon: Icon.body },
   { id: 'workout', label: 'Workout', icon: Icon.plus },
-  { id: 'library', label: 'Library', icon: Icon.list },
+  { id: 'injuries', label: 'Injuries', icon: Icon.injury },
   { id: 'more', label: 'You', icon: Icon.more },
 ];
 
@@ -66,10 +66,11 @@ function ProfileApp() {
               setIntent({ focus, nonce: Date.now() });
               setTab('workout');
             }}
+            onOpenInjuries={() => setTab('injuries')}
           />
         )}
         {tab === 'workout' && <WorkoutTab key={resetKey} state={state} body={body} intent={intent} />}
-        {tab === 'library' && <Library key={resetKey} state={state} body={body} />}
+        {tab === 'injuries' && <InjuriesTab key={resetKey} state={state} body={body} />}
         {tab === 'more' && <More key={resetKey} state={state} body={body} />}
       </main>
 

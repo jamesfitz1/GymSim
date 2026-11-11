@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
-import { toast } from '../components/ui';
+import { Icon, toast } from '../components/ui';
 import { APP_NAME, AREA_BY_ID, COINS, DECAY_SPEEDS, HALF_LIFE_DAYS, SKINS } from '../domain/config';
 import { formatDay } from '../domain/dates';
+import { SEED_EXERCISES } from '../domain/exercises';
 import type { BodyState } from '../domain/engine';
 import type { AppState, DecaySpeed } from '../domain/types';
-import { actions, ownsSkin, profiles } from '../store';
+import { actions, isUnlocked, ownsSkin, profiles } from '../store';
 import { Disclaimer, FocusAreas } from './FocusAreas';
 
 export function More({ state, body }: { state: AppState; body: BodyState }) {
@@ -90,9 +91,64 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
           })}
         </div>
         <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}>
-          Locked exercises can be unlocked in the Library. Coins come from consistency: {COINS.trainingDay} per training day,
-          streak bonuses, and {COINS.weeklyTargetHit} per weekly priority target. They can't buy health levels.
+          Coins come from consistency: {COINS.trainingDay} per training day, streak bonuses, and {COINS.weeklyTargetHit} per weekly
+          focus target. They can't buy health levels.
         </p>
+      </section>
+
+      <section className="card" style={{ paddingBottom: 4 }}>
+        <h3>Bonus exercises</h3>
+        {SEED_EXERCISES.filter((e) => e.unlockCost).map((ex) => {
+          const owned = isUnlocked(state, ex);
+          return (
+            <div className="list-item" key={ex.id}>
+              <span className="grow">
+                <span style={{ display: 'block', fontWeight: 600 }}>{owned ? '' : '🔒 '}{ex.name}</span>
+                <span className="small muted">{owned ? 'Unlocked' : `${ex.unlockCost} coins`}</span>
+              </span>
+              {!owned && (
+                <button
+                  className="btn small"
+                  disabled={body.coinBalance < (ex.unlockCost ?? 0)}
+                  onClick={() => {
+                    if (actions.buy(`exercise:${ex.id}`, ex.unlockCost ?? 0, body.coinBalance)) toast(`Unlocked ${ex.name}`);
+                  }}
+                >
+                  Unlock
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </section>
+
+      <h2 className="section-title">My exercises</h2>
+      <section className="card" style={{ paddingTop: state.customExercises.length ? 4 : undefined, paddingBottom: 4 }}>
+        {state.customExercises.length === 0 && (
+          <p className="small muted">
+            Exercises you create appear here. Make one from <strong>Workout → Add exercise → Create custom exercise</strong>, e.g. one your
+            physio gave you.
+          </p>
+        )}
+        {state.customExercises.map((ex) => (
+          <div className="list-item" key={ex.id}>
+            <span className="grow">
+              <span style={{ display: 'block', fontWeight: 600 }}>{ex.name}</span>
+              <span className="small muted">
+                {[...ex.mappings].sort((a, b) => b.weight - a.weight).map((m) => `${AREA_BY_ID[m.areaId]?.name} ${Math.round(m.weight * 100)}%`).join(' · ')}
+              </span>
+            </span>
+            <button
+              className="icon-btn"
+              aria-label={`Delete ${ex.name}`}
+              onClick={() => {
+                if (confirm(`Delete “${ex.name}”? It will be removed from your workouts and plans too.`)) actions.deleteCustomExercise(ex.id);
+              }}
+            >
+              {Icon.trash}
+            </button>
+          </div>
+        ))}
       </section>
 
       <section className="card">

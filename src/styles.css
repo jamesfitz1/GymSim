@@ -357,3 +357,34 @@ details > summary::-webkit-details-marker { display: none; }
 .body3d { width: 100%; max-width: 320px; height: min(440px, 62vh); margin: 0 auto; cursor: grab; user-select: none; -webkit-user-select: none; }
 .body3d:active { cursor: grabbing; }
 .body3d canvas { display: block; }
+
+.link-title { all: unset; cursor: pointer; display: inline; }
+.link-title:hover h3, .link-title:hover { text-decoration: underline; }
+.injury-warning { display: block; font-size: 12px; font-weight: 600; color: var(--danger); margin-top: 2px; }
+.ex-option.locked { cursor: default; }
+
+/* Injuries */
+textarea {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; font: inherit; font-size: 16px; color: inherit; resize: vertical;
+}
+.pain-row { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; margin-top: 6px; }
+.pain-row button {
+  appearance: none; cursor: pointer; min-height: 36px; padding: 0;
+  border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px;
+  font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--text);
+}
+.pain-row button[aria-pressed='true'] { background: var(--danger); border-color: var(--danger); color: #fff; }
+.injury-card { border-left: 4px solid var(--danger); }
+.tag.sev-mild { color: #b7791f; }
+.tag.sev-moderate { color: #c05621; }
+.tag.sev-severe { color: var(--danger); }
+.pain-spark { display: block; }
+
+/* Injured body parts pulse red slowly (both views; 3D animates in WebGL). */
+g.injured { animation: injured-pulse 2.4s ease-in-out infinite; }
+@keyframes injured-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(209, 73, 91, 0)); stroke-opacity: 0.5; }
+  50% { filter: drop-shadow(0 0 4px rgba(209, 73, 91, 0.9)); stroke-opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { g.injured { animation: none; } }

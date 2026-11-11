@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { Stepper, toast } from '../components/ui';
-import { APP_NAME, AREA_BY_ID, COINS, SKINS } from '../domain/config';
+import { toast } from '../components/ui';
+import { APP_NAME, AREA_BY_ID, COINS, DECAY_SPEEDS, HALF_LIFE_DAYS, SKINS } from '../domain/config';
 import { formatDay } from '../domain/dates';
 import type { BodyState } from '../domain/engine';
-import type { AppState } from '../domain/types';
+import type { AppState, DecaySpeed } from '../domain/types';
 import { actions, ownsSkin, profiles } from '../store';
 import { Disclaimer, FocusAreas } from './FocusAreas';
 
@@ -106,23 +106,23 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
         ))}
       </section>
 
-      <h2 className="section-title">Tuning</h2>
+      <h2 className="section-title">How fast levels fade</h2>
       <section className="card">
-        <div className="row between" style={{ marginBottom: 12 }}>
-          <span>
-            <div style={{ fontWeight: 600 }}>Daily decay</div>
-            <div className="small muted">Points every area loses per day</div>
-          </span>
-          <Stepper value={state.settings.decayPerDay} min={0} max={15} onChange={(n) => actions.updateSettings({ decayPerDay: n })} />
+        <div className="segmented" role="group" aria-label="Fade speed">
+          {(Object.keys(DECAY_SPEEDS) as DecaySpeed[]).map((k) => (
+            <button key={k} type="button" aria-pressed={state.settings.decaySpeed === k} onClick={() => actions.updateSettings({ decaySpeed: k })}>
+              {DECAY_SPEEDS[k].label}
+            </button>
+          ))}
         </div>
-        <div className="row between">
-          <span>
-            <div style={{ fontWeight: 600 }}>Priority decay</div>
-            <div className="small muted">Faster decay for pinned areas</div>
-          </span>
-          <Stepper value={state.settings.priorityDecayPerDay} min={0} max={20} onChange={(n) => actions.updateSettings({ priorityDecayPerDay: n })} />
-        </div>
-        <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}>Changes apply to your whole history, so levels recalculate straight away.</p>
+        <p className="small muted" style={{ margin: '10px 0 6px' }}>{DECAY_SPEEDS[state.settings.decaySpeed]?.blurb}</p>
+        <p className="small muted" style={{ margin: 0 }}>
+          Each area loses a share of its level every day you don't train it. Cardio fades fastest (half in about{' '}
+          {Math.round(HALF_LIFE_DAYS.cardio / DECAY_SPEEDS[state.settings.decaySpeed].multiplier)} days), then mobility (
+          {Math.round(HALF_LIFE_DAYS.mobility / DECAY_SPEEDS[state.settings.decaySpeed].multiplier)} days), then strength (
+          {Math.round(HALF_LIFE_DAYS.strength / DECAY_SPEEDS[state.settings.decaySpeed].multiplier)} days). Changes apply to your whole
+          history, so levels recalculate straight away.
+        </p>
       </section>
 
       <h2 className="section-title">Your data</h2>

@@ -1,4 +1,4 @@
-import { COINS, SUB_AREAS, SYSTEMS, TUNING } from './config';
+import { COINS, dailyFade, SUB_AREAS, SYSTEMS, TUNING } from './config';
 import { addDays, dayRange, weekStart } from './dates';
 import type { AppState, Exercise, PriorityPin, SetEntry, SystemId, Workout } from './types';
 
@@ -125,6 +125,11 @@ export interface BodyState {
   recent: { date: string; levels: Record<string, number> }[];
 }
 
+/** Share of a gain that lands at this level (1 at 0, shrinking towards the top). */
+export function headroom(level: number): number {
+  return Math.max(0, 1 - level / TUNING.gainCeiling);
+}
+
 function clamp(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, n));
 }
@@ -179,7 +184,9 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
     for (const [areaId, raw] of Object.entries(dayGain)) {
       const g = Math.min(raw, TUNING.dailyGainCap);
       if (g <= 0) continue;
-      levels[areaId] = clamp(levels[areaId] + g, 0, TUNING.maxLevel);
+      // Harder to improve an area that's already strong.
+      levels[areaId] = clamp(levels[areaId] + g * headroom(levels[areaId]), 0, TUNING.maxLevel);
+      // Weekly targets measure effort, so they count the points before headroom.
       weekGains[areaId] = (weekGains[areaId] ?? 0) + g;
       lastTrained[areaId] = day;
     }
@@ -210,12 +217,12 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
 
     if (day >= keepFrom) recent.push({ date: day, levels: { ...levels } });
 
-    // 4. Overnight decay (not yet applied for today).
+    // 4. Overnight decay (not yet applied for today): each area loses a
+    //    percentage of its level, faster for cardio and for focus areas.
     if (day !== today) {
       for (const a of SUB_AREAS) {
-        const base = a.decayPerDay ?? settings.decayPerDay;
-        const rate = pinOn(pins, a.id, day) ? Math.max(base, settings.priorityDecayPerDay) : base;
-        levels[a.id] = clamp(levels[a.id] - rate, 0, TUNING.maxLevel);
+        const rate = dailyFade(a.fade, settings.decaySpeed, !!pinOn(pins, a.id, day));
+        levels[a.id] = clamp(levels[a.id] * (1 - rate), 0, TUNING.maxLevel);
       }
     }
   }
@@ -256,7 +263,7 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
   };
 }
 
-/** Is the area visibly in decline? (Lower now than TUNING.trendDays days ago.) */
+/** Is the area visibly in decline? (Down at least `decliningBy` over the last TUNING.trendDays days.) */
 export function isDeclining(body: BodyState, areaId: string): boolean {
-  return body.trend[areaId] < 0;
+  return body.trend[areaId] <= -TUNING.decliningBy;
 }

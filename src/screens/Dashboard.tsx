@@ -1,5 +1,10 @@
 import { lazy, Suspense, useState } from 'react';
 import { BodyFigure } from '../components/BodyFigure';
+import { LevelBar, TrendTag } from '../components/ui';
+import { APP_NAME, AREA_BY_ID, levelBand, SUB_AREAS, SYSTEMS } from '../domain/config';
+import { daysBetween, formatDay } from '../domain/dates';
+import { isDeclining, type BodyState } from '../domain/engine';
+import type { AppState } from '../domain/types';
 import { actions } from '../store';
 
 const Body3D = lazy(() => import('../components/Body3D'));
@@ -15,11 +20,6 @@ const hasWebGL = () => {
   }
   return webgl;
 };
-import { LevelBar, TrendTag } from '../components/ui';
-import { APP_NAME, AREA_BY_ID, levelBand, SUB_AREAS, SYSTEMS } from '../domain/config';
-import { daysBetween, formatDay } from '../domain/dates';
-import type { BodyState } from '../domain/engine';
-import type { AppState } from '../domain/types';
 
 export function Dashboard({ state, body, onLogForArea }: {
   state: AppState;
@@ -29,7 +29,7 @@ export function Dashboard({ state, body, onLogForArea }: {
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const pinned = new Set(state.pins.map((p) => p.areaId));
-  const declining = SUB_AREAS.filter((a) => body.trend[a.id] < 0).length;
+  const declining = SUB_AREAS.filter((a) => isDeclining(body, a.id)).length;
 
   const toggle = (id: string) =>
     setOpen((prev) => {
@@ -177,7 +177,7 @@ export function Dashboard({ state, body, onLogForArea }: {
         {SYSTEMS.map((sys) => {
           const lvl = body.systemLevels[sys.id];
           const subs = SUB_AREAS.filter((a) => a.systemId === sys.id);
-          const anyDown = subs.some((a) => body.trend[a.id] < 0);
+          const anyDown = subs.some((a) => isDeclining(body, a.id));
           const isOpen = open.has(sys.id);
           return (
             <div className="level-row" key={sys.id}>

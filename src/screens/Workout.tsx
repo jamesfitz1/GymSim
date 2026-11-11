@@ -508,7 +508,7 @@ function Summary({ state, body, workout, exercises, onDone }: {
             <strong style={{ color: '#2f9e6e' }}>+{Math.round(g)}</strong>
           </div>
         ))}
-        <p className="small muted" style={{ margin: '8px 0 0' }}>Each area can gain at most +35 a day, so very big totals are capped on the body.</p>
+        <p className="small muted" style={{ margin: '8px 0 0' }}>These are the points you earned. On the body, areas that are already strong gain less, and no area gains more than +35 a day.</p>
       </section>
 
       <section className="card">

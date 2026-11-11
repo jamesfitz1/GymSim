@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AREA_BY_ID, DEFAULT_SETTINGS, SUB_AREAS, TUNING } from './config';
+import { AREA_BY_ID, dailyFade, DEFAULT_SETTINGS, HALF_LIFE_DAYS, SUB_AREAS, TUNING } from './config';
 import { addDays, weekStart } from './dates';
-import { areaGains, computeBody, entryGains, sessionPoints } from './engine';
+import { areaGains, computeBody, entryGains, headroom, isDeclining, sessionPoints } from './engine';
 import { SEED_EXERCISES } from './exercises';
 import { logsToWorkouts, normaliseState } from './migrate';
 import type { AppState, LegacyStateV1, WorkoutLog } from './types';
@@ -103,39 +103,90 @@ describe('replay: levels and decay', () => {
     for (const a of SUB_AREAS) expect(b.levels[a.id]).toBe(TUNING.startLevel);
   });
 
-  it('decays every area by the daily rate', () => {
-    const b = computeBody(state({ startDate: addDays(TODAY, -4) }), EX, TODAY);
-    expect(b.levels.quads).toBe(TUNING.startLevel - 4 * DEFAULT_SETTINGS.decayPerDay);
+  it('loses a percentage each day, set by the half-life', () => {
+    const b = computeBody(state({ startDate: addDays(TODAY, -HALF_LIFE_DAYS.strength) }), EX, TODAY);
+    expect(b.levels.quads).toBeCloseTo(TUNING.startLevel / 2, 5);
+  });
+
+  it('cardio fades faster than mobility, which fades faster than strength', () => {
+    const b = computeBody(state({ startDate: addDays(TODAY, -10) }), EX, TODAY);
+    expect(b.levels.aerobic).toBeLessThan(b.levels.hipMobility);
+    expect(b.levels.hipMobility).toBeLessThan(b.levels.quads);
+  });
+
+  it('the fade-speed setting scales every rate', () => {
+    const start = addDays(TODAY, -14);
+    const gentle = computeBody(state({ startDate: start, settings: { ...DEFAULT_SETTINGS, decaySpeed: 'gentle' } }), EX, TODAY);
+    const std = computeBody(state({ startDate: start }), EX, TODAY);
+    const tough = computeBody(state({ startDate: start, settings: { ...DEFAULT_SETTINGS, decaySpeed: 'tough' } }), EX, TODAY);
+    expect(gentle.levels.quads).toBeGreaterThan(std.levels.quads);
+    expect(std.levels.quads).toBeGreaterThan(tough.levels.quads);
   });
 
   it('never drops below 0 or rises above 100', () => {
-    const low = computeBody(state({ startDate: addDays(TODAY, -100) }), EX, TODAY);
-    expect(low.levels.quads).toBe(0);
-    const logs = Array.from({ length: 30 }, (_, i) => log('back-squat', addDays(TODAY, -i), { sets: 10, reps: 10, weightKg: 100 }));
-    const high = computeBody(state({ startDate: addDays(TODAY, -30), logs }), EX, TODAY);
-    expect(high.levels.quads).toBe(100);
+    const low = computeBody(state({ startDate: addDays(TODAY, -365) }), EX, TODAY);
+    expect(low.levels.aerobic).toBeGreaterThanOrEqual(0);
+    expect(low.levels.aerobic).toBeLessThan(1);
+    const logs = Array.from({ length: 60 }, (_, i) => log('back-squat', addDays(TODAY, -i), { sets: 10, reps: 10, weightKg: 100 }));
+    const high = computeBody(state({ startDate: addDays(TODAY, -60), logs }), EX, TODAY);
+    expect(high.levels.quads).toBeLessThanOrEqual(100);
+    expect(high.levels.quads).toBeGreaterThan(85);
   });
 
-  it('caps how much an area can gain in one day', () => {
+  it('caps the daily gain, and stronger areas gain less', () => {
     const logs = Array.from({ length: 6 }, () => log('running', TODAY, { minutes: 50 }));
     const b = computeBody(state({ logs }), EX, TODAY);
-    expect(b.levels.aerobic).toBe(TUNING.startLevel + TUNING.dailyGainCap);
+    expect(b.levels.aerobic).toBeCloseTo(TUNING.startLevel + TUNING.dailyGainCap * headroom(TUNING.startLevel));
+    const one = [log('running', TODAY, { minutes: 20 })];
+    const weak = computeBody(state({ logs: one, startLevels: { aerobic: 20 } }), EX, TODAY);
+    const strong = computeBody(state({ logs: one, startLevels: { aerobic: 80 } }), EX, TODAY);
+    expect(weak.levels.aerobic - 20).toBeGreaterThan(strong.levels.aerobic - 80);
   });
 
-  it('pinned areas decay faster, only from the day they were pinned', () => {
+  it('weekly targets count the points earned, before headroom', () => {
+    const b = computeBody(state({ logs: [log('bird-dog', TODAY, { sets: 3, reps: 10 })] }), EX, TODAY);
+    expect(b.weekGains.spinalStabilisers).toBeCloseTo(TUNING.sessionPoints);
+  });
+
+  it('focus areas fade faster, only from the day they were added', () => {
     const start = addDays(TODAY, -6);
     const pins = [{ areaId: 'lowerBack', since: addDays(TODAY, -3), weeklyTarget: 60 }];
     const b = computeBody(state({ startDate: start, pins }), EX, TODAY);
-    const d = DEFAULT_SETTINGS;
-    expect(b.levels.lowerBack).toBe(TUNING.startLevel - 3 * d.decayPerDay - 3 * d.priorityDecayPerDay);
-    expect(b.levels.quads).toBe(TUNING.startLevel - 6 * d.decayPerDay);
+    const normal = dailyFade('strength');
+    const focus = dailyFade('strength', 'standard', true);
+    expect(focus).toBeCloseTo(normal * TUNING.focusFadeMultiplier);
+    expect(b.levels.lowerBack).toBeCloseTo(TUNING.startLevel * (1 - normal) ** 3 * (1 - focus) ** 3);
+    expect(b.levels.quads).toBeCloseTo(TUNING.startLevel * (1 - normal) ** 6);
   });
 
   it('flags untrained areas as declining and trained ones as not', () => {
     const logs = [log('cat-cow', TODAY, { minutes: 3 })];
     const b = computeBody(state({ startDate: addDays(TODAY, -5), logs }), EX, TODAY);
-    expect(b.trend.quads).toBeLessThan(0);
+    expect(isDeclining(b, 'aerobic')).toBe(true);
+    expect(isDeclining(b, 'backMobility')).toBe(false);
     expect(b.trend.backMobility).toBeGreaterThan(0);
+  });
+
+  /** Train one exercise `perWeek` times a week for 6 months; return the final week's average level. */
+  function settle(exerciseId: string, area: string, perWeek: number, fields: Partial<WorkoutLog>) {
+    const pattern: Record<number, number[]> = { 1: [0], 2: [0, 3], 3: [0, 2, 4] };
+    const days = 26 * 7;
+    const logs: WorkoutLog[] = [];
+    for (let d = 0; d < days; d++) if (pattern[perWeek].includes(d % 7)) logs.push(log(exerciseId, addDays(TODAY, d - days + 1), fields));
+    const levels = [0, 1, 2, 3, 4, 5, 6].map((back) => computeBody(state({ startDate: addDays(TODAY, -days + 1), logs }), EX, addDays(TODAY, -back)).levels[area]);
+    return levels.reduce((a, b) => a + b, 0) / levels.length;
+  }
+
+  it('levels settle where training frequency puts them, instead of hitting 100 or 0', () => {
+    const squat = { sets: 5, reps: 5 };
+    const once = settle('back-squat', 'quads', 1, squat);
+    const twice = settle('back-squat', 'quads', 2, squat);
+    const thrice = settle('back-squat', 'quads', 3, squat);
+    expect(once).toBeGreaterThan(40);
+    expect(once).toBeLessThan(65);
+    expect(twice).toBeGreaterThan(once + 10);
+    expect(thrice).toBeGreaterThan(twice + 5);
+    expect(thrice).toBeLessThan(95);
   });
 
   it('system level is the average of its sub-areas', () => {
@@ -235,7 +286,7 @@ describe('workouts (v0.2)', () => {
 
   it('an unfinished workout still counts its ticked sets', () => {
     const b = computeBody(state({ workouts: [W([{ minutes: 20, done: true }], 'running')] }), EX, TODAY);
-    expect(b.levels.aerobic).toBeCloseTo(TUNING.startLevel + TUNING.sessionPoints);
+    expect(b.levels.aerobic).toBeCloseTo(TUNING.startLevel + TUNING.sessionPoints * headroom(TUNING.startLevel));
   });
 
   it('uses starting levels from the health check', () => {
@@ -315,5 +366,30 @@ describe('health check scoring', () => {
     const { suggestedFocus } = await import('./assessment');
     expect(suggestedFocus({ condition: 'back' })).toContain('spinalStabilisers');
     expect(suggestedFocus({ condition: 'none' })).toEqual([]);
+  });
+});
+
+describe('health check v0.3', () => {
+  it('every area is covered by at least one self-test (incl. lats and calves)', async () => {
+    const { TEST_AREAS } = await import('./assessment');
+    const covered = new Set(Object.values(TEST_AREAS).flat());
+    for (const a of SUB_AREAS) expect(covered.has(a.id), a.name).toBe(true);
+  });
+
+  it('a very fit person can start well above the old 70 ceiling, but never above START_MAX', async () => {
+    const { QUESTIONS, scoreAssessment, START_MAX } = await import('./assessment');
+    const best = Object.fromEntries(
+      QUESTIONS.map((q) => [q.id, [...q.options].filter((o) => o.score !== undefined).sort((a, b) => b.score! - a.score!)[0]?.value ?? 'none']),
+    );
+    const s = scoreAssessment(best);
+    expect(Math.max(...Object.values(s))).toBeGreaterThan(75);
+    for (const v of Object.values(s)) expect(v).toBeLessThanOrEqual(START_MAX);
+  });
+
+  it('starting levels follow training frequency for that type of area', async () => {
+    const { scoreAssessment } = await import('./assessment');
+    const lifter = scoreAssessment({ activity: '2', strengthFreq: 'often3', cardioFreq: 'never', stretchFreq: 'never' });
+    expect(lifter.quads).toBeGreaterThan(lifter.aerobic + 20);
+    expect(lifter.quads).toBeGreaterThan(lifter.hipMobility + 20);
   });
 });

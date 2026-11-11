@@ -119,7 +119,7 @@ function NewProfile({ onCancel }: { onCancel?: () => void }) {
             </label>
           </section>
           <button className="btn block" disabled={!agreed} onClick={() => setStep({ k: 'q', i: 0 })}>Next: quick health check</button>
-          <p className="small muted" style={{ textAlign: 'center' }}>About 2 minutes, 12 one-tap questions. It sets your starting levels.</p>
+          <p className="small muted" style={{ textAlign: 'center' }}>About 3 minutes, {QUESTIONS.length} one-tap questions. It sets your starting levels.</p>
         </>
       )}
 

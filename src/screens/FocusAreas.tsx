@@ -1,5 +1,5 @@
 import { Icon, Stepper } from '../components/ui';
-import { SUB_AREAS, SYSTEMS } from '../domain/config';
+import { SUB_AREAS, SYSTEMS, TUNING } from '../domain/config';
 import type { BodyState } from '../domain/engine';
 import type { AppState } from '../domain/types';
 import { actions } from '../store';
@@ -16,7 +16,6 @@ export function Disclaimer() {
 
 export function FocusAreas({ state, body, onBack }: { state: AppState; body: BodyState; onBack: () => void }) {
   const pins = new Map(state.pins.map((p) => [p.areaId, p]));
-  const { decayPerDay, priorityDecayPerDay } = state.settings;
 
   return (
     <>
@@ -33,8 +32,9 @@ export function FocusAreas({ state, body, onBack }: { state: AppState; body: Bod
       <Disclaimer />
 
       <p className="small muted" style={{ margin: '0 4px 12px' }}>
-        A focus area gets a weekly points target and a spot on your dashboard. It also decays faster:
-        −{priorityDecayPerDay}/day instead of −{decayPerDay}/day, so missing it shows quickly. Hitting a weekly target earns 20 coins.
+        A focus area gets a weekly points target and a spot on your dashboard. It also fades
+        {` ${TUNING.focusFadeMultiplier}×`} faster than other areas, so missing it shows quickly. The target counts the points you
+        earn, so three standard sessions a week make 60. Hitting it earns 20 coins.
       </p>
 
       {SYSTEMS.map((sys) => (

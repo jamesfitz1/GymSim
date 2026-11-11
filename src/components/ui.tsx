@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { levelBand } from '../domain/config';
+import { levelBand, TUNING } from '../domain/config';
 
 export function LevelBar({ level, color }: { level: number; color?: string }) {
   const pct = Math.max(0, Math.min(100, level));
@@ -11,7 +11,7 @@ export function LevelBar({ level, color }: { level: number; color?: string }) {
 }
 
 export function TrendTag({ trend }: { trend: number }) {
-  if (trend <= -0.5) return <span className="tag down">↓ {Math.abs(Math.round(trend))}</span>;
+  if (trend <= -TUNING.decliningBy) return <span className="tag down">↓ {Math.abs(Math.round(trend))}</span>;
   if (trend >= 0.5) return <span className="tag up">↑ {Math.round(trend)}</span>;
   return null;
 }

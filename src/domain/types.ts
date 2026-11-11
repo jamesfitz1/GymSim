@@ -14,13 +14,17 @@ export interface SystemDef {
   blurb: string;
 }
 
+/** How an area fades without training: strength slowest, cardio fastest. */
+export type FadeKind = 'strength' | 'mobility' | 'cardio';
+
 export interface SubArea {
   id: string;
   systemId: SystemId;
   name: string;
-  /** Optional per-area override of the default daily decay (PRD §6.3). */
-  decayPerDay?: number;
+  fade: FadeKind;
 }
+
+export type DecaySpeed = 'gentle' | 'standard' | 'tough';
 
 export type ExerciseKind = 'reps' | 'timed';
 
@@ -124,8 +128,8 @@ export interface Purchase {
 }
 
 export interface Settings {
-  decayPerDay: number;
-  priorityDecayPerDay: number;
+  /** Scales every area's fade rate. */
+  decaySpeed: DecaySpeed;
   skin: string;
   /** Body view on the dashboard. Defaults to 3D where supported. */
   bodyView?: '3d' | '2d';

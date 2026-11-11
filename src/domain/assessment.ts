@@ -1,26 +1,29 @@
 import { SUB_AREAS, TUNING } from './config';
-import type { SystemId } from './types';
+import type { FadeKind } from './types';
 
-// New-profile health check. About 11 one-tap questions (2–3 minutes) that set
+// New-profile health check: 14 one-tap questions (about 3 minutes) that set
 // each sub-area's starting level instead of a flat TUNING.startLevel.
 //
 // How scoring works:
-//   1. A baseline from overall activity (Q1).
-//   2. Plus a modifier per system from how often you've done strength,
-//      cardio or stretching recently.
-//   3. Where a quick self-test covers an area, it's blended in (60% test,
-//      40% the estimate from 1+2). "Not sure" skips the test.
-//   4. Clamped to MIN..MAX so nobody starts maxed out or at zero.
+//   1. An estimate per area: 40% overall activity + 60% how often you've
+//      trained that *type* of area recently (strength / cardio / stretching).
+//      The frequency scores match where an area settles under the decay model
+//      (see HALF_LIFE_DAYS in config.ts), so starting levels and day-to-day
+//      levels mean the same thing.
+//   2. Where a quick self-test covers an area, it's blended in: 60% test,
+//      40% estimate. Several tests on one area are averaged. "Not sure" skips.
+//   3. Clamped to START_MIN..START_MAX, so nobody starts at zero or maxed out.
 // All the numbers live here so they're easy to tune.
 
 export const START_MIN = 10;
-export const START_MAX = 70;
+export const START_MAX = 85;
 const TEST_WEIGHT = 0.6;
+const ACTIVITY_WEIGHT = 0.4;
 
 export interface Option {
   label: string;
   value: string;
-  /** Score this option contributes (meaning depends on the question). */
+  /** Level (0–100) this answer suggests for the areas it covers. */
   score?: number;
 }
 
@@ -33,11 +36,14 @@ export interface Question {
 }
 
 const NOT_SURE: Option = { label: "Not sure / can't test now", value: 'unsure' };
+
+/** Scores roughly match where areas settle at that training frequency. */
 const FREQ: Option[] = [
-  { label: 'Never', value: 'never', score: -6 },
-  { label: 'Now and then', value: 'sometimes', score: 0 },
-  { label: 'About once a week', value: 'weekly', score: 4 },
-  { label: 'Twice a week or more', value: 'often', score: 8 },
+  { label: 'Never', value: 'never', score: 12 },
+  { label: 'Now and then', value: 'sometimes', score: 28 },
+  { label: 'About once a week', value: 'weekly', score: 48 },
+  { label: 'Twice a week', value: 'often', score: 66 },
+  { label: 'Three times a week or more', value: 'often3', score: 80 },
 ];
 
 export const QUESTIONS: Question[] = [
@@ -46,14 +52,15 @@ export const QUESTIONS: Question[] = [
     section: 'Activity',
     prompt: 'Over the last 3 months, how active have you been overall?',
     options: [
-      { label: 'Hardly at all', value: '0', score: 20 },
-      { label: 'A little (about once a week)', value: '1', score: 28 },
-      { label: 'Fairly (2–3 times a week)', value: '2', score: 38 },
-      { label: 'Very (4+ times a week)', value: '3', score: 48 },
+      { label: 'Hardly at all', value: '0', score: 18 },
+      { label: 'A little (about once a week)', value: '1', score: 30 },
+      { label: 'Fairly (2–3 times a week)', value: '2', score: 44 },
+      { label: 'Very (4–5 times a week)', value: '3', score: 58 },
+      { label: 'Training most days', value: '4', score: 70 },
     ],
   },
   { id: 'strengthFreq', section: 'Activity', prompt: 'How often have you done strength training?', help: 'Weights, machines or bodyweight exercises.', options: FREQ },
-  { id: 'cardioFreq', section: 'Activity', prompt: 'How often have you done cardio?', help: 'Running, cycling, swimming, brisk walks.', options: FREQ },
+  { id: 'cardioFreq', section: 'Activity', prompt: 'How often have you done cardio?', help: 'Running, cycling, swimming, brisk walks, sport.', options: FREQ },
   { id: 'stretchFreq', section: 'Activity', prompt: 'How often have you stretched or done yoga?', options: FREQ },
   {
     id: 'pushups',
@@ -61,11 +68,27 @@ export const QUESTIONS: Question[] = [
     prompt: 'How many push-ups can you do in a row?',
     help: 'Full push-ups with good form. Knee push-ups count as "1–5".',
     options: [
-      { label: 'None', value: '0', score: 12 },
+      { label: 'None', value: '0', score: 10 },
       { label: '1–5', value: '1', score: 24 },
-      { label: '6–15', value: '2', score: 38 },
-      { label: '16–30', value: '3', score: 52 },
-      { label: 'More than 30', value: '4', score: 66 },
+      { label: '6–15', value: '2', score: 40 },
+      { label: '16–30', value: '3', score: 56 },
+      { label: '31–45', value: '4', score: 70 },
+      { label: 'More than 45', value: '5', score: 84 },
+      NOT_SURE,
+    ],
+  },
+  {
+    id: 'pullups',
+    section: 'Quick self-tests',
+    prompt: 'Hanging from a bar, how many pull-ups can you do?',
+    help: 'Palms facing away, chin over the bar.',
+    options: [
+      { label: "I can't hang from a bar", value: '0', score: 10 },
+      { label: 'I can hang, but no pull-ups', value: '1', score: 24 },
+      { label: '1–3', value: '2', score: 40 },
+      { label: '4–8', value: '3', score: 56 },
+      { label: '9–15', value: '4', score: 70 },
+      { label: 'More than 15', value: '5', score: 84 },
       NOT_SURE,
     ],
   },
@@ -74,10 +97,25 @@ export const QUESTIONS: Question[] = [
     section: 'Quick self-tests',
     prompt: 'How many times can you stand up from a chair in 30 seconds, without using your hands?',
     options: [
-      { label: 'Fewer than 8', value: '0', score: 14 },
+      { label: 'Fewer than 8', value: '0', score: 12 },
       { label: '8–12', value: '1', score: 28 },
-      { label: '13–17', value: '2', score: 42 },
-      { label: '18 or more', value: '3', score: 58 },
+      { label: '13–17', value: '2', score: 44 },
+      { label: '18–22', value: '3', score: 60 },
+      { label: '23 or more', value: '4', score: 76 },
+      NOT_SURE,
+    ],
+  },
+  {
+    id: 'calfRaise',
+    section: 'Quick self-tests',
+    prompt: 'Standing on one leg, how many slow heel raises can you do?',
+    help: 'Rise all the way up onto your toes each time. A fingertip on a wall for balance is fine.',
+    options: [
+      { label: 'Fewer than 5', value: '0', score: 14 },
+      { label: '5–14', value: '1', score: 30 },
+      { label: '15–24', value: '2', score: 48 },
+      { label: '25–35', value: '3', score: 64 },
+      { label: 'More than 35', value: '4', score: 78 },
       NOT_SURE,
     ],
   },
@@ -86,11 +124,12 @@ export const QUESTIONS: Question[] = [
     section: 'Quick self-tests',
     prompt: 'How long can you hold a plank?',
     options: [
-      { label: 'Under 15 seconds', value: '0', score: 14 },
-      { label: '15–30 seconds', value: '1', score: 26 },
+      { label: 'Under 15 seconds', value: '0', score: 12 },
+      { label: '15–30 seconds', value: '1', score: 24 },
       { label: '30–60 seconds', value: '2', score: 40 },
-      { label: '1–2 minutes', value: '3', score: 54 },
-      { label: 'Over 2 minutes', value: '4', score: 66 },
+      { label: '1–2 minutes', value: '3', score: 56 },
+      { label: '2–3 minutes', value: '4', score: 70 },
+      { label: 'Over 3 minutes', value: '5', score: 82 },
       NOT_SURE,
     ],
   },
@@ -100,11 +139,12 @@ export const QUESTIONS: Question[] = [
     prompt: 'Stand and bend forward with straight legs. Where do your fingertips reach?',
     help: 'Go gently and stop if it hurts.',
     options: [
-      { label: 'Knees', value: '0', score: 15 },
+      { label: 'Knees', value: '0', score: 14 },
       { label: 'Shins', value: '1', score: 28 },
       { label: 'Ankles', value: '2', score: 42 },
       { label: 'Toes', value: '3', score: 56 },
-      { label: 'Palms on the floor', value: '4', score: 70 },
+      { label: 'Fingertips on the floor', value: '4', score: 68 },
+      { label: 'Palms flat on the floor', value: '5', score: 82 },
       NOT_SURE,
     ],
   },
@@ -116,18 +156,20 @@ export const QUESTIONS: Question[] = [
       { label: 'More than a hand apart', value: '0', score: 18 },
       { label: 'Nearly touching', value: '1', score: 34 },
       { label: 'Touching', value: '2', score: 50 },
-      { label: 'Overlapping', value: '3', score: 64 },
+      { label: 'Overlapping', value: '3', score: 66 },
+      { label: 'Overlapping by a hand or more', value: '4', score: 80 },
       NOT_SURE,
     ],
   },
   {
     id: 'hips',
     section: 'Quick self-tests',
-    prompt: 'Can you sit cross-legged on the floor comfortably?',
+    prompt: 'How comfortable are you sitting low on the floor?',
     options: [
-      { label: 'No', value: '0', score: 18 },
-      { label: 'With some effort', value: '1', score: 36 },
-      { label: 'Yes, easily', value: '2', score: 56 },
+      { label: "I can't sit cross-legged", value: '0', score: 16 },
+      { label: 'Cross-legged, with some effort', value: '1', score: 34 },
+      { label: 'Cross-legged, easily', value: '2', score: 54 },
+      { label: 'I can also rest in a deep squat', value: '3', score: 74 },
       NOT_SURE,
     ],
   },
@@ -136,10 +178,11 @@ export const QUESTIONS: Question[] = [
     section: 'Quick self-tests',
     prompt: 'How long can you walk briskly or jog without stopping?',
     options: [
-      { label: 'Under 10 minutes', value: '0', score: 14 },
-      { label: '10–20 minutes', value: '1', score: 28 },
-      { label: '20–40 minutes', value: '2', score: 44 },
-      { label: 'Over 40 minutes', value: '3', score: 60 },
+      { label: 'Under 10 minutes', value: '0', score: 12 },
+      { label: '10–20 minutes', value: '1', score: 26 },
+      { label: '20–40 minutes', value: '2', score: 42 },
+      { label: '40–60 minutes', value: '3', score: 58 },
+      { label: 'Over an hour, or I could run 5 km', value: '4', score: 74 },
       NOT_SURE,
     ],
   },
@@ -156,10 +199,12 @@ export const QUESTIONS: Question[] = [
   },
 ];
 
-/** Which self-test informs which areas. */
-const TEST_AREAS: Record<string, string[]> = {
+/** Which self-test informs which areas. Every area has at least one test. */
+export const TEST_AREAS: Record<string, string[]> = {
   pushups: ['chest', 'shoulders', 'arms'],
+  pullups: ['lats', 'arms'],
   sitStand: ['quads', 'glutes', 'hamstrings'],
+  calfRaise: ['calves'],
   plank: ['abs', 'obliques', 'spinalStabilisers', 'lowerBack'],
   toeTouch: ['hamstringFlex', 'backMobility'],
   shoulderReach: ['shoulderMobility'],
@@ -167,15 +212,12 @@ const TEST_AREAS: Record<string, string[]> = {
   walk: ['aerobic', 'hiit'],
 };
 
-/** Which frequency question nudges which systems. */
-const FREQ_SYSTEMS: Record<string, SystemId[]> = {
-  strengthFreq: ['upper', 'lower', 'core', 'back'],
-  cardioFreq: ['cardio'],
-  stretchFreq: ['mobility'],
+/** Which frequency question applies to which type of area. */
+const FREQ_FOR: Record<FadeKind, string> = {
+  strength: 'strengthFreq',
+  cardio: 'cardioFreq',
+  mobility: 'stretchFreq',
 };
-
-/** Back mobility is in the Back system but responds to stretching. */
-const EXTRA_FREQ_AREAS: Record<string, string[]> = { stretchFreq: ['backMobility'] };
 
 function optionScore(qid: string, value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -185,16 +227,15 @@ function optionScore(qid: string, value: string | undefined): number | undefined
 export type Answers = Record<string, string>;
 
 export function scoreAssessment(answers: Answers): Record<string, number> {
-  const baseline = optionScore('activity', answers.activity) ?? TUNING.startLevel;
+  const activity = optionScore('activity', answers.activity);
   const out: Record<string, number> = {};
 
   for (const area of SUB_AREAS) {
-    let estimate = baseline;
-    for (const [qid, systems] of Object.entries(FREQ_SYSTEMS)) {
-      const mod = optionScore(qid, answers[qid]) ?? 0;
-      const applies = systems.includes(area.systemId) || EXTRA_FREQ_AREAS[qid]?.includes(area.id);
-      if (applies) estimate += mod;
-    }
+    const freq = optionScore(FREQ_FOR[area.fade], answers[FREQ_FOR[area.fade]]);
+    const estimate =
+      activity !== undefined && freq !== undefined
+        ? ACTIVITY_WEIGHT * activity + (1 - ACTIVITY_WEIGHT) * freq
+        : (freq ?? activity ?? TUNING.startLevel);
 
     const tests = Object.entries(TEST_AREAS)
       .filter(([, areas]) => areas.includes(area.id))

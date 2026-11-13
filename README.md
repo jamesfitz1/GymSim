@@ -78,6 +78,6 @@ src/domain/engine.ts     scoring + day-by-day replay (levels, decay, streaks, co
 src/domain/engine.test.ts
 src/store.ts             localStorage persistence + actions
 src/screens/             Dashboard, Workout, Injuries, More (You), Profiles, FocusAreas
-src/components/          Body3D (three.js mannequin), BodyFigure (2D fallback), ExercisePicker, UI pieces
+src/components/          bodyModel (sculpted 3D body), Body3D (3D view), BodyFigure (2D fallback), ExercisePicker, UI pieces
 public/                  manifest, icons, service worker (offline)
 ```

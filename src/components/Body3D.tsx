@@ -1,110 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { levelBand, LEVEL_BANDS, SUB_AREAS } from '../domain/config';
+import { LEVEL_BANDS, SUB_AREAS } from '../domain/config';
+import { buildBody, type BodyModel } from './bodyModel';
 
-// A code-built 3D mannequin (original, no model files). Every muscle group is
-// its own mesh, coloured by that sub-area's health band. Mobility shows as
-// rings at the shoulders, hips and knees, and beads along the spine. The heart
-// in the chest shows Cardio. Drag to spin, tap a part to select it.
-
-const SKIN = 0xd6a37c;
-const HAIR = 0x4a2f22;
-const SHORTS = 0x23282c;
-const SHOE = 0x2fb3a1;
-
-type Geo = 'sphere' | 'capsule' | 'torus' | 'heart';
-interface Part {
-  /** Sub-area id, 'cardio' for the heart, or undefined for neutral parts. */
-  area?: string;
-  geo: Geo;
-  /** sphere: [r]; capsule: [r, length]; torus: [r, tube] */
-  size: number[];
-  pos: [number, number, number];
-  scale?: [number, number, number];
-  rot?: [number, number, number];
-  color?: number;
-  /** Also place a copy mirrored across x = 0. */
-  pair?: boolean;
-  /** Mobility rings and spine beads: slightly glowing. */
-  joint?: boolean;
-}
-
-const PARTS: Part[] = [
-  // --- neutral body -------------------------------------------------------
-  { geo: 'sphere', size: [0.105], pos: [0, 1.63, 0], scale: [1, 1.15, 1.02], color: SKIN },
-  { geo: 'sphere', size: [0.112], pos: [0, 1.67, -0.012], scale: [1.02, 1.0, 1.04], color: HAIR },
-  { geo: 'capsule', size: [0.048, 0.08], pos: [0, 1.48, 0], color: SKIN },
-  { geo: 'capsule', size: [0.14, 0.3], pos: [0, 1.2, 0], scale: [1.18, 1, 0.7], color: SKIN },
-  { geo: 'sphere', size: [0.15], pos: [0, 0.93, 0], scale: [1.08, 0.62, 0.74], color: SHORTS },
-  { geo: 'sphere', size: [0.045], pos: [0.305, 0.78, 0.01], scale: [0.8, 1.25, 0.6], color: SKIN, pair: true },
-  // Continuous skin arm under the arm muscles, so shoulder → elbow → wrist reads as one limb.
-  { geo: 'capsule', size: [0.036, 0.5], pos: [0.272, 1.08, 0.005], rot: [0, 0, 0.075], color: SKIN, pair: true },
-  { geo: 'sphere', size: [0.04], pos: [0.272, 1.1, 0.005], color: SKIN, pair: true },
-  { geo: 'capsule', size: [0.056, 0.62], pos: [0.09, 0.48, 0], color: SKIN, pair: true },
-  { geo: 'capsule', size: [0.05, 0.12], pos: [0.09, 0.05, 0.035], rot: [Math.PI / 2, 0, 0], scale: [1.05, 1, 0.75], color: SHOE, pair: true },
-
-  // --- muscles --------------------------------------------------------------
-  { area: 'shoulders', geo: 'sphere', size: [0.074], pos: [0.2, 1.41, 0], scale: [1, 0.92, 1], pair: true },
-  { area: 'chest', geo: 'sphere', size: [0.1], pos: [0.078, 1.33, 0.072], scale: [1, 0.74, 0.55], pair: true },
-  { area: 'abs', geo: 'capsule', size: [0.066, 0.15], pos: [0, 1.1, 0.078], scale: [1, 1, 0.5] },
-  { area: 'obliques', geo: 'capsule', size: [0.04, 0.15], pos: [0.125, 1.1, 0.045], scale: [1, 1, 0.75], pair: true },
-  { area: 'lats', geo: 'sphere', size: [0.11], pos: [0.098, 1.28, -0.066], scale: [0.9, 1.3, 0.5], pair: true },
-  { area: 'spinalStabilisers', geo: 'capsule', size: [0.026, 0.38], pos: [0, 1.18, -0.096] },
-  { area: 'lowerBack', geo: 'sphere', size: [0.1], pos: [0, 1.02, -0.072], scale: [1.32, 0.6, 0.5] },
-  { area: 'arms', geo: 'capsule', size: [0.047, 0.15], pos: [0.255, 1.23, 0.005], rot: [0, 0, 0.1], pair: true },
-  { area: 'arms', geo: 'capsule', size: [0.04, 0.17], pos: [0.29, 0.97, 0.01], rot: [0, 0, 0.05], pair: true },
-  { area: 'glutes', geo: 'sphere', size: [0.086], pos: [0.075, 0.9, -0.07], scale: [1, 1, 0.82], pair: true },
-  { area: 'quads', geo: 'capsule', size: [0.073, 0.22], pos: [0.09, 0.69, 0.024], scale: [1, 1, 0.9], pair: true },
-  { area: 'hamstrings', geo: 'capsule', size: [0.066, 0.2], pos: [0.09, 0.69, -0.03], pair: true },
-  { area: 'calves', geo: 'capsule', size: [0.055, 0.15], pos: [0.09, 0.32, -0.018], pair: true },
-
-  // --- mobility -------------------------------------------------------------
-  // Every mobility area is a dotted line of beads, like the spine.
-  // Shoulder: an arc over the top of each shoulder, front to back.
-  ...[-70, -35, 0, 35, 70].map((deg): Part => {
-    const t = (deg * Math.PI) / 180;
-    return { area: 'shoulderMobility', geo: 'sphere', size: [0.019], pos: [0.205, 1.41 + 0.095 * Math.cos(t), 0.095 * Math.sin(t)], pair: true, joint: true };
-  }),
-  // Hip: around the front and outside of each hip crease.
-  ...[-35, 5, 45, 85, 125].map((deg): Part => {
-    const t = (deg * Math.PI) / 180;
-    return { area: 'hipMobility', geo: 'sphere', size: [0.018], pos: [0.09 + 0.1 * Math.sin(t), 0.845, 0.1 * Math.cos(t)], pair: true, joint: true };
-  }),
-  // Hamstring flexibility: a line down the back of each thigh.
-  ...[0.8, 0.735, 0.67, 0.605, 0.54].map((y): Part => ({ area: 'hamstringFlex', geo: 'sphere', size: [0.018], pos: [0.09, y, -0.1], pair: true, joint: true })),
-  ...[1.0, 1.09, 1.18, 1.27, 1.36].map(
-    (y): Part => ({ area: 'backMobility', geo: 'sphere', size: [0.02], pos: [0, y, -0.122], joint: true }),
-  ),
-
-  // --- heart (Cardio) -------------------------------------------------------
-  { area: 'cardio', geo: 'heart', size: [0.05], pos: [0.072, 1.33, 0.118] },
-];
-
-function heartGeometry(size: number) {
-  const s = new THREE.Shape();
-  s.moveTo(0, -0.35);
-  s.bezierCurveTo(-0.15, -0.2, -0.5, 0.05, -0.5, 0.3);
-  s.bezierCurveTo(-0.5, 0.55, -0.2, 0.62, 0, 0.4);
-  s.bezierCurveTo(0.2, 0.62, 0.5, 0.55, 0.5, 0.3);
-  s.bezierCurveTo(0.5, 0.05, 0.15, -0.2, 0, -0.35);
-  const g = new THREE.ExtrudeGeometry(s, { depth: 0.2, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.06, bevelSegments: 3 });
-  g.center();
-  g.scale(size * 1.6, size * 1.6, size * 1.6);
-  return g;
-}
-
-function geometry(p: Part): THREE.BufferGeometry {
-  switch (p.geo) {
-    case 'sphere':
-      return new THREE.SphereGeometry(p.size[0], 28, 20);
-    case 'capsule':
-      return new THREE.CapsuleGeometry(p.size[0], p.size[1], 8, 20);
-    case 'torus':
-      return new THREE.TorusGeometry(p.size[0], p.size[1], 10, 36);
-    case 'heart':
-      return heartGeometry(p.size[0]);
-  }
-}
+// The 3D body view. The athletic figure itself is built in ./bodyModel.ts.
+// Each muscle is coloured by its sub-area's health band and grows (up to 20%)
+// with its level; mobility shows as beads; the heart shows Cardio.
+// Drag to spin, tap a part to select it.
 
 export function webglAvailable(): boolean {
   try {
@@ -127,19 +29,10 @@ export interface Body3DProps {
   onSelect?: (id: string) => void;
 }
 
-const INJURY_RED = 0xd1495b;
-
 export default function Body3D({ levels, cardioLevel, pinned, injured, selected, onSelect }: Body3DProps) {
-  // Read by the render loop, which is created once.
-  const injuredRef = useRef<Set<string>>(injured ?? new Set());
-  injuredRef.current = injured ?? new Set();
-  const selectedRef = useRef(selected);
-  selectedRef.current = selected;
   const hostRef = useRef<HTMLDivElement>(null);
   const api = useRef<{
-    meshes: { mesh: THREE.Mesh; part: Part }[];
-    figure: THREE.Group;
-    heart?: THREE.Mesh;
+    model: BodyModel;
     render: () => void;
     setAngle: (a: number, animate?: boolean) => void;
     getAngle: () => number;
@@ -165,12 +58,16 @@ export default function Body3D({ levels, cardioLevel, pinned, injured, selected,
     camera.position.set(0, 1.02, 4.3);
     camera.lookAt(0, 0.9, 0);
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9690, 1.6));
-    const key = new THREE.DirectionalLight(0xffffff, 1.5);
-    key.position.set(1.5, 2.5, 3);
+    // Key + fill + rim lighting so muscle shapes read clearly.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x7d8a84, 1.25));
+    const key = new THREE.DirectionalLight(0xffffff, 1.9);
+    key.position.set(1.6, 2.6, 2.8);
     scene.add(key);
-    const rim = new THREE.DirectionalLight(0xffffff, 0.7);
-    rim.position.set(-2, 1.5, -2.5);
+    const fill = new THREE.DirectionalLight(0xfff4ea, 0.55);
+    fill.position.set(-2.2, 1.2, 1.8);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 1.1);
+    rim.position.set(-1.2, 2.2, -2.8);
     scene.add(rim);
 
     const figure = new THREE.Group();
@@ -185,22 +82,8 @@ export default function Body3D({ levels, cardioLevel, pinned, injured, selected,
     shadow.scale.set(1, 0.55, 1);
     scene.add(shadow);
 
-    const meshes: { mesh: THREE.Mesh; part: Part }[] = [];
-    let heart: THREE.Mesh | undefined;
-    for (const part of PARTS) {
-      const sides = part.pair ? [1, -1] : [1];
-      for (const sx of sides) {
-        const mat = new THREE.MeshStandardMaterial({ color: part.color ?? 0xcccccc, roughness: part.color === SHORTS ? 0.9 : 0.62, metalness: 0 });
-        const mesh = new THREE.Mesh(geometry(part), mat);
-        mesh.position.set(part.pos[0] * sx, part.pos[1], part.pos[2]);
-        if (part.scale) mesh.scale.set(...part.scale);
-        if (part.rot) mesh.rotation.set(part.rot[0], part.rot[1] * sx, part.rot[2] * sx);
-        mesh.userData.area = part.area;
-        figure.add(mesh);
-        if (part.area) meshes.push({ mesh, part });
-        if (part.geo === 'heart') heart = mesh;
-      }
-    }
+    const model = buildBody();
+    figure.add(model.figure);
 
     // --- sizing ---------------------------------------------------------------
     const resize = () => {
@@ -247,21 +130,7 @@ export default function Body3D({ levels, cardioLevel, pinned, injured, selected,
         }
       }
       figure.rotation.y = angle;
-      if (heart && !reducedMotion()) {
-        const t = (now / 1000) % 1.1;
-        const beat = t < 0.12 ? 1 + 0.18 * Math.sin((t / 0.12) * Math.PI) : t > 0.22 && t < 0.34 ? 1 + 0.1 * Math.sin(((t - 0.22) / 0.12) * Math.PI) : 1;
-        heart.scale.setScalar(beat);
-      }
-      // Injured areas pulse red slowly (steady glow with reduced motion).
-      if (injuredRef.current.size) {
-        const glow = reducedMotion() ? 0.5 : 0.2 + 0.45 * (0.5 + 0.5 * Math.sin((now / 2400) * Math.PI * 2));
-        for (const { mesh, part } of meshes) {
-          if (!injuredRef.current.has(part.area!) || selectedRef.current === part.area) continue;
-          const mat = mesh.material as THREE.MeshStandardMaterial;
-          mat.emissive.setHex(INJURY_RED);
-          mat.emissiveIntensity = glow;
-        }
-      }
+      model.tick(now, dt, reducedMotion());
       updateSide();
       render();
       raf = requestAnimationFrame(loop);
@@ -283,8 +152,9 @@ export default function Body3D({ levels, cardioLevel, pinned, injured, selected,
       const r = renderer.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
-      const hit = raycaster.intersectObjects(figure.children, false)[0];
-      return hit?.object.userData.area as string | undefined;
+      // Only the nearest surface counts, so a tap never selects a muscle hidden behind skin.
+      const hit = raycaster.intersectObject(figure, true)[0];
+      return hit ? model.pick(hit) : undefined;
     };
 
     const el = renderer.domElement;
@@ -328,9 +198,7 @@ export default function Body3D({ levels, cardioLevel, pinned, injured, selected,
     window.addEventListener('pointercancel', up);
 
     api.current = {
-      meshes,
-      figure,
-      heart,
+      model,
       render,
       getAngle: () => angle,
       setAngle: (target, animate = true) => {
@@ -347,36 +215,28 @@ export default function Body3D({ levels, cardioLevel, pinned, injured, selected,
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
-      figure.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
+      model.dispose();
+      shadow.geometry.dispose();
+      (shadow.material as THREE.Material).dispose();
       renderer.dispose();
       el.remove();
       api.current = null;
     };
   }, []);
 
-  // Recolour whenever levels / focus / selection change.
+  // Restyle whenever levels / focus / injuries / selection change.
   useEffect(() => {
     const a = api.current;
     if (!a) return;
     const cardioPinned = SUB_AREAS.some((s) => s.systemId === 'cardio' && pinned.has(s.id));
-    for (const { mesh, part } of a.meshes) {
-      const area = part.area!;
-      const level = area === 'cardio' ? cardioLevel : levels[area] ?? 0;
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      mat.color.set(levelBand(level).color);
-      const isSel = selected === area;
-      const isPinned = area === 'cardio' ? cardioPinned : pinned.has(area);
-      if (isSel) mat.emissive.set(0xffffff), (mat.emissiveIntensity = 0.38);
-      else if (injured?.has(area)) mat.emissive.setHex(INJURY_RED), (mat.emissiveIntensity = 0.5);
-      else if (isPinned) mat.emissive.set(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1f7a6a'), (mat.emissiveIntensity = 0.28);
-      else if (part.joint) mat.emissive.set(levelBand(level).color), (mat.emissiveIntensity = 0.25);
-      else mat.emissive.set(0x000000), (mat.emissiveIntensity = 0);
-    }
+    a.model.setStyle({
+      levels,
+      cardioLevel,
+      selected,
+      pinned: cardioPinned ? new Set([...pinned, 'cardio']) : pinned,
+      injured: injured ?? new Set(),
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1f7a6a',
+    });
     a.render();
   }, [levels, cardioLevel, pinned, injured, selected]);
 

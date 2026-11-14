@@ -208,8 +208,8 @@ export function buildBody(): BodyModel {
     figure,
     skinPart(
       [
-        [0.0, 0.83], [0.11, 0.845], [0.152, 0.9], [0.152, 0.96], [0.138, 1.03], [0.137, 1.09],
-        [0.15, 1.17], [0.17, 1.25], [0.185, 1.32], [0.188, 1.355], [0.172, 1.395], [0.14, 1.432], [0.095, 1.466], [0.06, 1.49], [0.0, 1.5],
+        [0.0, 0.905], [0.085, 0.91], [0.13, 0.932], [0.148, 0.965], [0.138, 1.03], [0.137, 1.09],
+        [0.15, 1.17], [0.17, 1.25], [0.185, 1.32], [0.188, 1.355], [0.174, 1.395], [0.148, 1.435], [0.112, 1.468], [0.078, 1.495], [0.058, 1.512], [0.0, 1.52],
       ],
       {
         sz: torsoDepth,
@@ -240,7 +240,7 @@ export function buildBody(): BodyModel {
           }
           if (y >= 0.965 && y < 1.235) return A('obliques');
           if (y >= 1.235 && y <= 1.38) return A('lats');
-          if (y < 0.965) return SHORTS_ID;
+          if (y < 0.965) return A('glutes'); // side of the hip (gluteus medius)
           return SKIN_ID;
         },
         bump: (x, y, z) => 1.35 * torsoBump(x, y, z),
@@ -263,14 +263,14 @@ export function buildBody(): BodyModel {
           b += 0.022 * g2(ax - 0.125, y - 1.24, 0.045, 0.075) * clamp01(back + 0.35 * sideF); // lat flare
           b += 0.009 * g2(ax - 0.03, y - 1.17, 0.013, 0.11) * back; // erectors
           b += 0.004 * g2(ax, y - 1.0, 0.05, 0.03) * back; // lower back
-          b += 0.021 * g2(ax - 0.07, y - 0.9, 0.05, 0.045) * clamp01(back * 1.3); // glutes
+          b += 0.006 * g2(ax - 0.075, y - 0.965, 0.05, 0.025) * clamp01(back * 1.3); // top edge of the glutes (the rest is on the legs)
           b += 0.012 * g2(ax - 0.178, y - 1.39, 0.03, 0.03); // deltoid top
-          b += 0.012 * g2(ax - 0.075, y - 1.445, 0.05, 0.028) * clamp01(back + 0.3); // traps
+          b += 0.016 * g2(ax - 0.07, y - 1.46, 0.05, 0.03) * clamp01(back + 0.45); // traps, rising into the neck
           return b;
   }
 
   // Neck and head (plain skin). Faceless by design, with a tapered chin.
-  addMesh(figure, new THREE.CylinderGeometry(0.052, 0.06, 0.12, 28), plainSkin, [0, 1.53, 0.004]);
+  addMesh(figure, new THREE.CylinderGeometry(0.054, 0.064, 0.1, 28), plainSkin, [0, 1.525, 0.004]);
   const headGeo = new THREE.SphereGeometry(0.094, 40, 28);
   {
     const p = headGeo.attributes.position as THREE.BufferAttribute;
@@ -283,10 +283,10 @@ export function buildBody(): BodyModel {
     }
     headGeo.computeVertexNormals();
   }
-  addMesh(figure, headGeo, plainSkin, [0, 1.668, 0.006], [0.95, 1.18, 1.04]);
-  for (const s of [1, -1]) addMesh(figure, new THREE.SphereGeometry(0.019, 16, 12), plainSkin, [0.09 * s, 1.67, -0.004], [0.55, 1.1, 0.9]);
-  addMesh(figure, new THREE.SphereGeometry(0.1, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.5), hairMat, [0, 1.69, -0.008], [0.97, 1.06, 1.07], [-0.34, 0, 0]);
-  addMesh(figure, new THREE.SphereGeometry(0.03, 20, 14), hairMat, [0.01, 1.786, 0.038], [1.4, 0.55, 1], [0.4, 0, 0.3]);
+  addMesh(figure, headGeo, plainSkin, [0, 1.642, 0.008], [0.95, 1.16, 1.04]);
+  for (const s of [1, -1]) addMesh(figure, new THREE.SphereGeometry(0.019, 16, 12), plainSkin, [0.09 * s, 1.645, -0.002], [0.55, 1.1, 0.9]);
+  addMesh(figure, new THREE.SphereGeometry(0.1, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.5), hairMat, [0, 1.664, -0.006], [0.97, 1.06, 1.07], [-0.34, 0, 0]);
+  addMesh(figure, new THREE.SphereGeometry(0.03, 20, 14), hairMat, [0.01, 1.76, 0.04], [1.4, 0.55, 1], [0.4, 0, 0.3]);
 
   // ===========================================================================
   // Arms and legs (built per side so geometry stays correctly oriented).
@@ -325,20 +325,22 @@ export function buildBody(): BodyModel {
 
     // --- leg, from the hip joint
     const leg = new THREE.Group();
-    leg.position.set(0.085 * s, 0.86, 0);
+    leg.position.set(0.08 * s, 0.86, 0);
     leg.rotation.z = 0.025 * s;
     figure.add(leg);
     const legTheta = (x: number, z: number) => Math.atan2(x * s, z);
     addSkin(
       leg,
       skinPart(
-        [[0.0, 0.03], [0.089, 0.0], [0.091, -0.07], [0.083, -0.18], [0.071, -0.3], [0.055, -0.39], [0.05, -0.42], [0.052, -0.48], [0.055, -0.54], [0.045, -0.64], [0.032, -0.75], [0.03, -0.79], [0.0, -0.8]],
+        [[0.0, 0.14], [0.06, 0.13], [0.084, 0.1], [0.092, 0.05], [0.092, 0.0], [0.09, -0.07], [0.083, -0.18], [0.071, -0.3], [0.055, -0.39], [0.05, -0.42], [0.052, -0.48], [0.055, -0.54], [0.045, -0.64], [0.032, -0.75], [0.03, -0.79], [0.0, -0.8]],
         {
           sz: () => 0.96,
           samples: 200,
           segments: 64,
           classify: (x, y, z) => {
             const th = legTheta(x, z);
+            // Top of the leg: glutes at the back (down to the gluteal fold), shorts elsewhere.
+            if (y > -0.105 && Math.cos(th) < 0.25) return A('glutes'); // back and side of the hip
             if (y > -0.075) return SHORTS_ID;
             if (y > -0.385) return Math.abs(th) < 1.75 ? A('quads') : A('hamstrings');
             if (y > -0.445 || y < -0.72) return SKIN_ID;
@@ -353,6 +355,12 @@ export function buildBody(): BodyModel {
               b += 0.01 * g1(y + 0.17, 0.09) * g1(dAng(th, 0), 0.42); // rectus femoris
               b += 0.014 * g1(y + 0.33, 0.03) * g1(dAng(th, -0.9), 0.35); // teardrop above the knee
               b += 0.008 * g1(y + 0.2, 0.08) * clamp01(-Math.cos(th)); // hamstrings
+              // Glutes: a rounded mass at the back-top of the leg, slightly to the outside,
+              // with a soft crease (the gluteal fold) where it meets the hamstrings.
+              const backness = g1(dAng(th, Math.PI - 0.35), 0.75); // centred behind, slightly outside
+              b += 0.024 * g1(y - 0.015, 0.055) * backness; // gluteus maximus
+              b += 0.004 * g1(y - 0.06, 0.04) * g1(dAng(th, 1.85), 0.45); // gluteus medius, side of the hip
+              b -= 0.007 * g1(y + 0.098, 0.013) * backness; // gluteal fold
             } else {
               b += 0.016 * g1(y + 0.53, 0.05) * (g1(dAng(th, 2.55), 0.45) + g1(dAng(th, -2.55), 0.45)); // two calf heads
               b += 0.005 * g1(y + 0.57, 0.07) * g1(dAng(th, 0.6), 0.4); // shin muscle

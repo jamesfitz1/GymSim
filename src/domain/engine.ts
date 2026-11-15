@@ -1,5 +1,6 @@
 import { COINS, dailyFade, SUB_AREAS, SYSTEMS, TUNING } from './config';
 import { addDays, dayRange, weekStart } from './dates';
+import { stepGoalOf, stepPoints } from './steps';
 import type { AppState, Exercise, Injury, PriorityPin, SetEntry, SystemId, Workout } from './types';
 
 // ---------------------------------------------------------------------------
@@ -159,6 +160,7 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
   for (const a of SUB_AREAS) levels[a.id] = state.startLevels?.[a.id] ?? TUNING.startLevel;
 
   const ledger: CoinEntry[] = [];
+  const stepGoal = stepGoalOf(settings.stepGoal);
   const recent: BodyState['recent'] = [];
   const thisWeek = weekStart(today);
   let weekKey = '';
@@ -199,6 +201,10 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
         dayGain[areaId] = (dayGain[areaId] ?? 0) + g;
       }
     }
+    // Walking: synced steps add to aerobic base (within the same daily cap).
+    const daySteps = state.steps?.[day];
+    const walk = stepPoints(daySteps);
+    if (walk > 0 && 'aerobic' in levels) dayGain.aerobic = (dayGain.aerobic ?? 0) + walk;
     for (const [areaId, raw] of Object.entries(dayGain)) {
       const g = Math.min(raw, TUNING.dailyGainCap);
       if (g <= 0) continue;
@@ -221,6 +227,8 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
     } else {
       streak = 0;
     }
+
+    if (daySteps !== undefined && daySteps >= stepGoal) ledger.push({ date: day, amount: COINS.stepGoal, reason: 'Step goal' });
 
     // 3. Priority weekly targets (awarded once per area per week).
     for (const pin of pins) {

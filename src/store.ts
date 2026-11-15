@@ -533,6 +533,18 @@ export const actions = {
     return true;
   },
 
+  /** Saves synced daily step totals (overwriting those days) and the sync time. */
+  saveSteps(days: Record<string, number>) {
+    const s = cur();
+    set({ ...s, steps: { ...(s.steps ?? {}), ...days }, stepsSyncedAt: Date.now() });
+  },
+
+  /** Forgets synced steps (when disconnecting). */
+  clearSteps() {
+    const s = cur();
+    set({ ...s, steps: undefined, stepsSyncedAt: undefined });
+  },
+
   updateSettings(patch: Partial<Settings>) {
     const s = cur();
     set({ ...s, settings: { ...s.settings, ...patch } });

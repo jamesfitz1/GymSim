@@ -82,6 +82,11 @@ export const TUNING = {
   defaultWeeklyTarget: 60,
   /** One-off drop applied to each affected area on an injury's start day. */
   injuryHit: 10,
+  /** Steps below this earn nothing; each further stepsPerPoint adds 1 point to aerobic base, up to stepsDailyMax. */
+  stepsFloor: 3000,
+  stepsPerPoint: 1000,
+  stepsDailyMax: 8,
+  defaultStepGoal: 8000,
   /** An exercise "works" an injured area if it puts at least this weight on it. */
   injuryWarnWeight: 0.2,
 } as const;
@@ -148,6 +153,8 @@ export const DEFAULT_SETTINGS: Settings = {
 export const COINS = {
   trainingDay: 5,
   weeklyTargetHit: 20,
+  /** Each day the step goal is reached. */
+  stepGoal: 5,
   streakMilestones: [
     { days: 3, coins: 10 },
     { days: 7, coins: 25 },

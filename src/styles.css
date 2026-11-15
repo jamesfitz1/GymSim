@@ -448,3 +448,16 @@ g.injured { animation: injured-pulse 2.4s ease-in-out infinite; }
   color: var(--muted); font-size: 13px; font-weight: 700; display: grid; place-items: center; margin-right: 10px;
 }
 .template-row .row-num { margin-right: 0; }
+
+/* Steps */
+.steps-big { font-size: 26px; font-weight: 700; margin-top: 2px; }
+.steps-done { color: #2f9e6e; }
+.steps-week { display: flex; align-items: flex-end; gap: 4px; height: 44px; }
+.steps-bar-wrap { width: 9px; height: 100%; display: flex; align-items: flex-end; }
+.steps-bar { width: 100%; border-radius: 3px; background: var(--border); }
+.steps-bar.hit { background: var(--accent); opacity: 0.55; }
+.steps-bar.today { opacity: 1; outline: 2px solid var(--accent); outline-offset: 1px; }
+.steps-bar.hit.today { opacity: 1; }
+.guide { padding-left: 20px; margin: 8px 0; }
+.guide li { margin-bottom: 8px; }
+.guide code { font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; word-break: break-all; }

@@ -1,6 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { timeAgo, useStepsSync } from '../components/StepsCard';
+import { stepGoalOf } from '../domain/steps';
+import { connect, disconnect, getClientId, isConnected, setClientId } from '../lib/googleHealth';
 import { Icon, toast } from '../components/ui';
-import { APP_NAME, AREA_BY_ID, COINS, DECAY_SPEEDS, HALF_LIFE_DAYS, SKINS } from '../domain/config';
+import { APP_NAME, AREA_BY_ID, COINS, DECAY_SPEEDS, HALF_LIFE_DAYS, SKINS, TUNING } from '../domain/config';
 import { formatDay } from '../domain/dates';
 import { SEED_EXERCISES } from '../domain/exercises';
 import type { BodyState } from '../domain/engine';
@@ -9,9 +12,13 @@ import { getApiKey, removeApiKey, setApiKey } from '../lib/apiKey';
 import { actions, isUnlocked, ownsSkin, profiles } from '../store';
 import { Disclaimer, FocusAreas } from './FocusAreas';
 
-export function More({ state, body }: { state: AppState; body: BodyState }) {
+export function More({ state, body, anchor }: { state: AppState; body: BodyState; anchor?: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [sub, setSub] = useState<'focus' | null>(null);
+  useEffect(() => {
+    // After App's scroll-to-top for the tab change.
+    if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ block: 'start' }));
+  }, [anchor]);
 
   if (sub === 'focus') return <FocusAreas state={state} body={body} onBack={() => setSub(null)} />;
 
@@ -162,6 +169,9 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
           </div>
         ))}
       </section>
+
+      <h2 className="section-title" id="fitbit">Fitbit steps</h2>
+      <FitbitSettings state={state} />
 
       <h2 className="section-title">Physio assistant</h2>
       <PhysioSettings />
@@ -326,6 +336,124 @@ function PhysioSettings() {
         </>
       )}
       {message && <p className="small" style={{ margin: '8px 0 0', color: message.ok ? '#2f9e6e' : 'var(--danger)' }}>{message.text}</p>}
+    </section>
+  );
+}
+
+/** Connect Fitbit through the Google Health API: a client ID James creates once, then Google sign-in. */
+function FitbitSettings({ state }: { state: AppState }) {
+  const [clientId, setId] = useState(() => getClientId() ?? '');
+  const [connected, setConnected] = useState(isConnected);
+  const [guide, setGuide] = useState(!getClientId());
+  const { busy, error, sync } = useStepsSync();
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const goal = stepGoalOf(state.settings.stepGoal);
+  const origin = typeof location !== 'undefined' ? location.origin : '';
+
+  return (
+    <section className="card">
+      <p className="small muted" style={{ marginTop: 0 }}>
+        Pulls your daily steps from Fitbit through Google (Fitbit accounts now live on Google). Steps add up to {TUNING.stepsDailyMax} points a day to Aerobic
+        base, and hitting your goal earns coins. Your Google sign-in stays on this device; steps are saved with your profile.
+      </p>
+
+      {connected ? (
+        <>
+          <p className="small" style={{ fontWeight: 600, margin: '0 0 8px' }}>
+            ✓ Connected{state.stepsSyncedAt ? ` · synced ${timeAgo(state.stepsSyncedAt)}` : ''}
+          </p>
+          <div className="grid-2">
+            <button className="btn ghost" disabled={busy} onClick={() => sync()}>{busy ? 'Syncing…' : 'Sync now'}</button>
+            <button
+              className="btn danger"
+              onClick={() => {
+                if (!confirm('Disconnect Fitbit? Synced steps stay unless you also clear them.')) return;
+                disconnect();
+                setConnected(false);
+                if (confirm('Also remove the synced steps (and the points and coins they earned)?')) actions.clearSteps();
+                toast('Fitbit disconnected');
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="field">
+            <span>Google OAuth client ID</span>
+            <input
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              placeholder="1234…apps.googleusercontent.com"
+              value={clientId}
+              onChange={(e) => setId(e.target.value)}
+              aria-label="Google OAuth client ID"
+            />
+          </label>
+          <button
+            className="btn block"
+            disabled={!/\.apps\.googleusercontent\.com$/.test(clientId.trim()) || busy}
+            onClick={async () => {
+              setConnectError(null);
+              setClientId(clientId);
+              try {
+                await connect();
+                setConnected(true);
+                await sync();
+              } catch (e) {
+                setConnectError(e instanceof Error ? e.message : 'Connecting failed. Try again.');
+              }
+            }}
+          >
+            {busy ? 'Syncing…' : 'Connect Fitbit'}
+          </button>
+          {clientId.trim() && !/\.apps\.googleusercontent\.com$/.test(clientId.trim()) && (
+            <p className="small muted" style={{ margin: '6px 0 0' }}>A client ID ends in .apps.googleusercontent.com</p>
+          )}
+        </>
+      )}
+      {(connectError || error) && <p className="small" style={{ color: 'var(--danger)', margin: '8px 0 0' }}>{connectError || error}</p>}
+
+      <label className="field" style={{ marginTop: 14 }}>
+        <span>Daily step goal</span>
+        <select value={goal} onChange={(e) => actions.updateSettings({ stepGoal: Number(e.target.value) })} aria-label="Daily step goal">
+          {[5000, 6000, 7000, 8000, 9000, 10000, 12000, 15000].map((n) => (
+            <option key={n} value={n}>{n.toLocaleString()} steps</option>
+          ))}
+        </select>
+      </label>
+
+      <button className="text-link" style={{ marginTop: 6 }} onClick={() => setGuide((g) => !g)} aria-expanded={guide}>
+        {guide ? 'Hide setup guide' : 'How to set up (one-off, about 10 minutes)'}
+      </button>
+      {guide && (
+        <ol className="guide small">
+          <li>
+            On a computer, open <strong>console.cloud.google.com</strong> and sign in with the Google account your Fitbit uses. Create a new
+            project (any name, e.g. "GymSim").
+          </li>
+          <li>
+            Go to <strong>APIs &amp; Services → Library</strong>, search for <strong>Google Health API</strong> and click <strong>Enable</strong>.
+          </li>
+          <li>
+            Go to <strong>Google Auth Platform</strong> (OAuth consent screen). Choose <strong>External</strong>, give it a name and your email.
+            Under <strong>Audience</strong>, leave it in <strong>Testing</strong> and add your own Google email as a <strong>test user</strong>.
+            Under <strong>Data access</strong>, add the scope <code>googlehealth.activity_and_fitness.readonly</code>.
+          </li>
+          <li>
+            Go to <strong>Clients → Create client</strong>, type <strong>Web application</strong>. Under <strong>Authorised JavaScript origins</strong>{' '}
+            add <code>{origin}</code>. No redirect URI is needed. Create it.
+          </li>
+          <li>Copy the <strong>Client ID</strong> (ends in .apps.googleusercontent.com), paste it above and tap <strong>Connect Fitbit</strong>.</li>
+          <li>
+            Google will warn that the app isn't verified, because it's your own private app. Tap <strong>Continue</strong>, tick the activity
+            permission, and allow.
+          </li>
+        </ol>
+      )}
     </section>
   );
 }

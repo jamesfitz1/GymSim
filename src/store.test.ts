@@ -24,4 +24,14 @@ describe('physio API key', () => {
     expect(getApiKey()).toBe('sk-ant-test-secret-123');
     expect(actions.exportJson()).not.toContain('sk-ant-test-secret-123');
   });
+
+  it('keeps the Google client ID out of backups but includes synced steps', async () => {
+    const { setClientId } = await import('./lib/googleHealth');
+    const { actions } = await import('./store');
+    setClientId('1234-secretish.apps.googleusercontent.com');
+    actions.saveSteps({ '2026-11-15': 9876 });
+    const json = actions.exportJson();
+    expect(json).not.toContain('apps.googleusercontent.com');
+    expect(json).toContain('9876');
+  });
 });

@@ -144,6 +144,8 @@ export interface Settings {
   skin: string;
   /** Body view on the dashboard. Defaults to 3D where supported. */
   bodyView?: '3d' | '2d';
+  /** Daily step goal (default TUNING.defaultStepGoal). */
+  stepGoal?: number;
 }
 
 export interface ProfileInfo {
@@ -172,6 +174,10 @@ export interface AppState {
   injuries: Injury[];
   purchases: Purchase[];
   settings: Settings;
+  /** Daily step totals synced from Fitbit (via the Google Health API), keyed by local day. */
+  steps?: Record<string, number>;
+  /** When steps were last synced (ms). */
+  stepsSyncedAt?: number;
 }
 
 export type InjurySeverity = 'mild' | 'moderate' | 'severe';

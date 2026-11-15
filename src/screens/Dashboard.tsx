@@ -7,6 +7,7 @@ import { injuryActiveOn, isDeclining, type BodyState } from '../domain/engine';
 import type { AppState } from '../domain/types';
 import { actions } from '../store';
 import { injuryTitle, PainSparkline } from './Injuries';
+import { StepsCard } from '../components/StepsCard';
 
 const Body3D = lazy(() => import('../components/Body3D'));
 let webgl: boolean | undefined;
@@ -22,11 +23,12 @@ const hasWebGL = () => {
   return webgl;
 };
 
-export function Dashboard({ state, body, onLogForArea, onOpenInjuries }: {
+export function Dashboard({ state, body, onLogForArea, onOpenInjuries, onSetupSteps }: {
   state: AppState;
   body: BodyState;
   onLogForArea: (areaId?: string) => void;
   onOpenInjuries: () => void;
+  onSetupSteps: () => void;
 }) {
   const injuredAreas = new Set(Object.keys(body.injured));
   const activeInjuries = state.injuries.filter((i) => injuryActiveOn(i, body.today));
@@ -158,6 +160,8 @@ export function Dashboard({ state, body, onLogForArea, onOpenInjuries }: {
           <p className="small muted" style={{ textAlign: 'center', margin: '10px 0 0' }}>Tap a muscle or the heart to see its level</p>
         )}
       </section>
+
+      <StepsCard state={state} today={body.today} onSetup={onSetupSteps} />
 
       {activeInjuries.length > 0 && (
         <>

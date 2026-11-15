@@ -43,6 +43,7 @@ function ProfileApp() {
   const [intent, setIntent] = useState<WorkoutIntent | undefined>();
   // Tapping the current tab again resets it to its first screen.
   const [resetKey, setResetKey] = useState(0);
+  const [moreAnchor, setMoreAnchor] = useState<string | undefined>();
   const inProgress = !!activeWorkout(state);
 
   useEffect(() => {
@@ -52,6 +53,7 @@ function ProfileApp() {
   const go = (t: Tab) => {
     if (t === tab) setResetKey((k) => k + 1);
     if (t === 'workout') setIntent(undefined);
+    setMoreAnchor(undefined);
     setTab(t);
   };
 
@@ -67,11 +69,15 @@ function ProfileApp() {
               setTab('workout');
             }}
             onOpenInjuries={() => setTab('injuries')}
+            onSetupSteps={() => {
+              setMoreAnchor('fitbit');
+              setTab('more');
+            }}
           />
         )}
         {tab === 'workout' && <WorkoutTab key={resetKey} state={state} body={body} intent={intent} />}
         {tab === 'injuries' && <InjuriesTab key={resetKey} state={state} body={body} onGoToWorkout={() => setTab('workout')} />}
-        {tab === 'more' && <More key={resetKey} state={state} body={body} />}
+        {tab === 'more' && <More key={resetKey} state={state} body={body} anchor={moreAnchor} />}
       </main>
 
       <Toaster />

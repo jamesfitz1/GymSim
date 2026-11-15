@@ -63,6 +63,15 @@ area drops **10 points**, then it **stops fading** until you mark it recovered, 
 raises it). Injured parts pulse red on the body, exercises that load them show a warning, and you can log a 0–10 pain score each
 day to see the trend. GymSim never gives medical or exercise advice; it's a log to take to your clinician.
 
+## Physio assistant and rehab
+
+Each injury has a **physio assistant** chat (Claude, via your own Anthropic API key, which is stored only on the device and
+never included in backups). It screens for red-flag symptoms first and sends you to medical care if any are present. It describes
+likely causes as possibilities to confirm with a physio, not a diagnosis, and suggests gentle exercises with doses and stop rules.
+When you agree on exercises it proposes a **rehab plan** you can save and start. Rehab sessions (Workout → **Rehab**) show each
+exercise's cues and finish with a pain check that feeds the injury's pain trend. Prompt and tool: `src/domain/physio.ts`; API
+calls: `src/lib/anthropic.ts`.
+
 ## Not in v1 (per PRD §7)
 
 No social features, no programme or medical guidance, no wearable or Health

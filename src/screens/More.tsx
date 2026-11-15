@@ -5,6 +5,7 @@ import { formatDay } from '../domain/dates';
 import { SEED_EXERCISES } from '../domain/exercises';
 import type { BodyState } from '../domain/engine';
 import type { AppState, DecaySpeed } from '../domain/types';
+import { getApiKey, removeApiKey, setApiKey } from '../lib/apiKey';
 import { actions, isUnlocked, ownsSkin, profiles } from '../store';
 import { Disclaimer, FocusAreas } from './FocusAreas';
 
@@ -162,6 +163,9 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
         ))}
       </section>
 
+      <h2 className="section-title">Physio assistant</h2>
+      <PhysioSettings />
+
       <h2 className="section-title">How fast levels fade</h2>
       <section className="card">
         <div className="segmented" role="group" aria-label="Fade speed">
@@ -243,5 +247,85 @@ export function More({ state, body }: { state: AppState; body: BodyState }) {
       <Disclaimer />
       <p className="small muted" style={{ textAlign: 'center' }}>{APP_NAME} v0.1</p>
     </>
+  );
+}
+
+/** API key for the physio assistant: stored on this device only, never in backups. */
+function PhysioSettings() {
+  const [saved, setSaved] = useState(() => !!getApiKey());
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const check = async (k: string) => {
+    setBusy(true);
+    setMessage(null);
+    const { testApiKey } = await import('../lib/anthropic'); // loads the SDK only when needed
+    const r = await testApiKey(k);
+    setBusy(false);
+    return r;
+  };
+
+  return (
+    <section className="card">
+      <p className="small muted" style={{ marginTop: 0 }}>
+        The physio assistant on the Injuries tab uses Claude with your own Anthropic API key. The key is stored only on this device and isn't
+        included in backups. Usage is billed to your Anthropic account. When you chat, your injury details and messages are sent to
+        Anthropic to generate replies.
+      </p>
+      {saved ? (
+        <>
+          <p className="small" style={{ fontWeight: 600 }}>✓ A key is saved on this device.</p>
+          <div className="grid-2">
+            <button
+              className="btn ghost"
+              disabled={busy}
+              onClick={async () => {
+                const k = getApiKey();
+                if (!k) return;
+                const r = await check(k);
+                setMessage(r.ok ? { ok: true, text: 'The key works.' } : { ok: false, text: r.message });
+              }}
+            >
+              {busy ? 'Checking…' : 'Test key'}
+            </button>
+            <button
+              className="btn danger"
+              onClick={() => {
+                if (confirm('Remove the API key from this device?')) {
+                  removeApiKey();
+                  setSaved(false);
+                  setMessage(null);
+                  toast('Key removed');
+                }
+              }}
+            >
+              Remove key
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <input type="password" autoComplete="off" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} aria-label="Anthropic API key" />
+          <button
+            className="btn block"
+            style={{ marginTop: 8 }}
+            disabled={!key.trim() || busy}
+            onClick={async () => {
+              const r = await check(key.trim());
+              if (r.ok) {
+                setApiKey(key.trim());
+                setKey('');
+                setSaved(true);
+                setMessage({ ok: true, text: 'Key saved and working.' });
+              } else setMessage({ ok: false, text: r.message });
+            }}
+          >
+            {busy ? 'Checking…' : 'Save key'}
+          </button>
+        </>
+      )}
+      {message && <p className="small" style={{ margin: '8px 0 0', color: message.ok ? '#2f9e6e' : 'var(--danger)' }}>{message.text}</p>}
+    </section>
   );
 }

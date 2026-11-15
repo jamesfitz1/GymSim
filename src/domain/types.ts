@@ -79,7 +79,11 @@ export interface WorkoutEntry {
   id: string;
   exerciseId: string;
   sets: SetEntry[];
+  /** Coaching cue / dosing note carried over from a (rehab) plan. */
+  note?: string;
 }
+
+export type SessionKind = 'workout' | 'rehab';
 
 /** A training session: a list of exercises, each with its sets. */
 export interface Workout {
@@ -90,6 +94,9 @@ export interface Workout {
   finishedAt?: number;
   name?: string;
   planId?: string;
+  kind?: SessionKind;
+  /** Rehab sessions are linked to the injury they're for. */
+  injuryId?: string;
   entries: WorkoutEntry[];
 }
 
@@ -98,7 +105,11 @@ export interface Plan {
   id: string;
   name: string;
   createdAt: number;
-  entries: { exerciseId: string; sets: Omit<SetEntry, 'done'>[] }[];
+  kind?: SessionKind;
+  injuryId?: string;
+  /** Short description, e.g. the physio assistant's summary. */
+  summary?: string;
+  entries: { exerciseId: string; sets: Omit<SetEntry, 'done'>[]; note?: string }[];
 }
 
 /** Legacy v0.1 single-exercise log, kept only for migration. */
@@ -185,6 +196,15 @@ export interface Injury {
   notes?: string;
   /** Pain check-ins, at most one per day. */
   pain: { date: string; score: number }[];
+  /** Conversation with the physio assistant (assistant content stored exactly as returned). */
+  chat?: StoredChatMessage[];
+  rehabPlanId?: string;
+}
+
+/** A Messages API message as stored on the device. */
+export interface StoredChatMessage {
+  role: 'user' | 'assistant';
+  content: string | unknown[];
 }
 
 /** v0.1 shape, read only to migrate. */

@@ -4,7 +4,8 @@ import { todayKey } from './domain/dates';
 import { computeBody } from './domain/engine';
 import { SEED_EXERCISES } from './domain/exercises';
 import { normaliseState } from './domain/migrate';
-import type { AppState, Exercise, Injury, Plan, PriorityPin, ProfileInfo, SetEntry, Settings, Workout, WorkoutEntry } from './domain/types';
+import { customExerciseFor, planEntriesFor, type Proposal } from './domain/physio';
+import type { AppState, Exercise, Injury, Plan, PriorityPin, ProfileInfo, SetEntry, Settings, StoredChatMessage, Workout, WorkoutEntry } from './domain/types';
 
 // Local-only persistence (PRD §12-E). Several profiles can live on one device;
 // there are no logins. Storage layout:
@@ -271,7 +272,7 @@ export const actions = {
     const plan = from?.planId ? s.plans.find((p) => p.id === from.planId) : undefined;
     const repeat = from?.repeatWorkoutId ? s.workouts.find((w) => w.id === from.repeatWorkoutId) : undefined;
     const entries: WorkoutEntry[] = plan
-      ? plan.entries.map((e) => ({ id: uid(), exerciseId: e.exerciseId, sets: e.sets.map((x) => ({ ...x, done: false })) }))
+      ? plan.entries.map((e) => ({ id: uid(), exerciseId: e.exerciseId, note: e.note, sets: e.sets.map((x) => ({ ...x, done: false })) }))
       : repeat
         ? repeat.entries.map((e) => ({ id: uid(), exerciseId: e.exerciseId, sets: setsFromLast(s, e.exerciseId) }))
         : [];
@@ -281,8 +282,18 @@ export const actions = {
       startedAt: Date.now(),
       name: plan?.name ?? repeat?.name,
       planId: plan?.id,
+      kind: plan?.kind ?? repeat?.kind,
+      injuryId: plan?.injuryId ?? repeat?.injuryId,
       entries,
     };
+    set({ ...s, workouts: [...s.workouts, w], activeWorkoutId: w.id });
+    return w.id;
+  },
+
+  /** A blank rehab session for an injury. */
+  startRehab(injuryId: string): string {
+    const s = cur();
+    const w: Workout = { id: `w-${uid()}`, date: todayKey(), startedAt: Date.now(), name: 'Rehab', kind: 'rehab', injuryId, entries: [] };
     set({ ...s, workouts: [...s.workouts, w], activeWorkoutId: w.id });
     return w.id;
   },
@@ -472,6 +483,45 @@ export const actions = {
   deleteInjury(injuryId: string) {
     const s = cur();
     set({ ...s, injuries: s.injuries.filter((i) => i.id !== injuryId) });
+  },
+
+  // --- Physio assistant ----------------------------------------------------------
+  saveInjuryChat(injuryId: string, chat: StoredChatMessage[]) {
+    const s = cur();
+    set({ ...s, injuries: s.injuries.map((i) => (i.id === injuryId ? { ...i, chat } : i)) });
+  },
+
+  /**
+   * Saves a proposed plan as a rehab plan for the injury, creating any custom
+   * exercises it needs. Returns the plan id.
+   */
+  saveRehabPlan(injuryId: string, proposal: Proposal): string {
+    const s = cur();
+    const created: Exercise[] = [];
+    const ids = proposal.exercises.map((e) => {
+      if (e.exerciseId) return e.exerciseId;
+      const existing = [...s.customExercises, ...created].find((c) => c.name.toLowerCase() === (e.customName ?? '').trim().toLowerCase());
+      if (existing) return existing.id;
+      const ex: Exercise = { ...customExerciseFor(e), id: `custom-${uid()}`, custom: true };
+      created.push(ex);
+      return ex.id;
+    });
+    const plan: Plan = {
+      id: `p-${uid()}`,
+      name: proposal.name,
+      createdAt: Date.now(),
+      kind: 'rehab',
+      injuryId,
+      summary: proposal.summary,
+      entries: planEntriesFor(proposal, ids),
+    };
+    set({
+      ...s,
+      customExercises: [...s.customExercises, ...created],
+      plans: [...s.plans, plan],
+      injuries: s.injuries.map((i) => (i.id === injuryId ? { ...i, rehabPlanId: plan.id } : i)),
+    });
+    return plan.id;
   },
 
   // --- Rewards & settings -----------------------------------------------------

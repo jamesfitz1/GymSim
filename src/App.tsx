@@ -70,7 +70,7 @@ function ProfileApp() {
           />
         )}
         {tab === 'workout' && <WorkoutTab key={resetKey} state={state} body={body} intent={intent} />}
-        {tab === 'injuries' && <InjuriesTab key={resetKey} state={state} body={body} />}
+        {tab === 'injuries' && <InjuriesTab key={resetKey} state={state} body={body} onGoToWorkout={() => setTab('workout')} />}
         {tab === 'more' && <More key={resetKey} state={state} body={body} />}
       </main>
 

@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Icon, toast } from '../components/ui';
 import { AREA_BY_ID, INJURY_REGION_BY_ID, INJURY_REGIONS, SUB_AREAS, SYSTEMS, TUNING } from '../domain/config';
 import { daysBetween, formatDay, todayKey } from '../domain/dates';
 import { injuryActiveOn, type BodyState } from '../domain/engine';
 import type { AppState, Injury, InjurySeverity, InjurySide } from '../domain/types';
-import { actions } from '../store';
+import { actions, activeWorkout } from '../store';
 
-type View = { k: 'list' } | { k: 'edit'; id?: string } | { k: 'focus'; title: string; candidates: string[] };
+// The chat pulls in the API SDK, so it loads only when opened.
+const PhysioChat = lazy(() => import('./PhysioChat'));
+
+type View = { k: 'list' } | { k: 'edit'; id?: string } | { k: 'focus'; title: string; candidates: string[] } | { k: 'chat'; id: string };
 
 const SEVERITIES: { id: InjurySeverity; label: string }[] = [
   { id: 'mild', label: 'Mild' },
@@ -49,7 +52,7 @@ export function PainSparkline({ pain, width = 120, height = 32 }: { pain: Injury
   );
 }
 
-export function InjuriesTab({ state, body }: { state: AppState; body: BodyState }) {
+export function InjuriesTab({ state, body, onGoToWorkout }: { state: AppState; body: BodyState; onGoToWorkout: () => void }) {
   const [view, setView] = useState<View>({ k: 'list' });
   const [showRecovered, setShowRecovered] = useState(false);
   const today = body.today;
@@ -68,6 +71,16 @@ export function InjuriesTab({ state, body }: { state: AppState; body: BodyState 
         }}
       />
     );
+  }
+
+  if (view.k === 'chat') {
+    const inj = state.injuries.find((i) => i.id === view.id);
+    if (inj)
+      return (
+        <Suspense fallback={<p className="empty">Opening the assistant…</p>}>
+          <PhysioChat state={state} body={body} injury={inj} onBack={() => setView({ k: 'list' })} onStarted={onGoToWorkout} />
+        </Suspense>
+      );
   }
 
   if (view.k === 'focus') {
@@ -101,7 +114,23 @@ export function InjuriesTab({ state, body }: { state: AppState; body: BodyState 
       )}
 
       {[...active, ...upcoming].map((inj) => (
-        <InjuryCard key={inj.id} injury={inj} today={today} onEdit={() => setView({ k: 'edit', id: inj.id })} />
+        <InjuryCard
+          key={inj.id}
+          injury={inj}
+          state={state}
+          today={today}
+          onEdit={() => setView({ k: 'edit', id: inj.id })}
+          onChat={() => setView({ k: 'chat', id: inj.id })}
+          onStartRehab={(planId) => {
+            if (activeWorkout(state)) {
+              toast('Finish your current workout first');
+              return;
+            }
+            if (planId) actions.startWorkout({ planId });
+            else actions.startRehab(inj.id);
+            onGoToWorkout();
+          }}
+        />
       ))}
 
       {recovered.length > 0 && (
@@ -131,7 +160,16 @@ export function InjuriesTab({ state, body }: { state: AppState; body: BodyState 
   );
 }
 
-function InjuryCard({ injury, today, onEdit }: { injury: Injury; today: string; onEdit: () => void }) {
+function InjuryCard({ injury, state, today, onEdit, onChat, onStartRehab }: {
+  injury: Injury;
+  state: AppState;
+  today: string;
+  onEdit: () => void;
+  onChat: () => void;
+  onStartRehab: (planId?: string) => void;
+}) {
+  const rehabPlan = state.plans.find((p) => p.id === injury.rehabPlanId);
+  const chatCount = (injury.chat ?? []).filter((m) => typeof m.content === 'string').length;
   const todayScore = injury.pain.find((p) => p.date === today)?.score;
   const latest = injury.pain[injury.pain.length - 1];
   const days = daysBetween(injury.startDate, today);
@@ -182,9 +220,17 @@ function InjuryCard({ injury, today, onEdit }: { injury: Injury; today: string; 
               </button>
             ))}
           </div>
+          <div className="grid-2" style={{ marginTop: 12 }}>
+            <button className="btn small" onClick={onChat}>
+              {chatCount ? 'Continue with the physio assistant' : 'Ask the physio assistant'}
+            </button>
+            <button className="btn ghost small" onClick={() => onStartRehab(rehabPlan?.id)}>
+              {rehabPlan ? `Start rehab: ${rehabPlan.name}` : 'Start a rehab session'}
+            </button>
+          </div>
           <button
             className="btn ghost block"
-            style={{ marginTop: 10 }}
+            style={{ marginTop: 8 }}
             onClick={() => {
               if (confirm(`Mark ${injuryTitle(injury).toLowerCase()} as recovered? Its areas will start fading normally again.`)) {
                 actions.resolveInjury(injury.id);

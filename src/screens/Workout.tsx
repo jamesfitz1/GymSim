@@ -8,6 +8,8 @@ import { entryGains, type BodyState } from '../domain/engine';
 import { bestSet, formatDuration, formatSets, personalBests } from '../domain/format';
 import type { AppState, Exercise, Plan, SetEntry, Workout } from '../domain/types';
 import { actions, activeWorkout, exerciseMap, lastEntryFor } from '../store';
+import { injuryActiveOn } from '../domain/engine';
+import { injuryTitle } from './Injuries';
 
 type View =
   | { k: 'main' }
@@ -233,9 +235,11 @@ function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout, onOpenExerci
   onOpenExercise: (id: string) => void;
 }) {
   const [showAllProgress, setShowAllProgress] = useState(false);
+  const [mode, setMode] = useState<'workout' | 'rehab'>('workout');
   const history = [...state.workouts].filter((w) => w.finishedAt).sort((a, b) => b.startedAt - a.startedAt);
   const last = history[0];
   const focus = new Set(state.pins.map((p) => p.areaId));
+  const workoutPlans = state.plans.filter((p) => p.kind !== 'rehab');
 
   return (
     <>
@@ -246,6 +250,15 @@ function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout, onOpenExerci
         </div>
       </header>
 
+      <div className="segmented" role="group" aria-label="Session type" style={{ marginBottom: 12 }}>
+        <button type="button" aria-pressed={mode === 'workout'} onClick={() => setMode('workout')}>Workout</button>
+        <button type="button" aria-pressed={mode === 'rehab'} onClick={() => setMode('rehab')}>Rehab</button>
+      </div>
+
+      {mode === 'rehab' ? (
+        <RehabStart state={state} exercises={exercises} onOpenPlan={onOpenPlan} />
+      ) : (
+      <>
       <section className="card">
         <button className="btn block" onClick={() => actions.startWorkout()}>Start a blank workout</button>
         {last && (
@@ -272,12 +285,12 @@ function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout, onOpenExerci
         </button>
       </div>
       <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
-        {state.plans.length === 0 && (
+        {workoutPlans.length === 0 && (
           <p className="small muted" style={{ padding: '10px 0', margin: 0 }}>
             Save a routine you repeat, like your physio exercises, then start it in one tap. You can also save any finished workout as a plan.
           </p>
         )}
-        {state.plans.map((p) => {
+        {workoutPlans.map((p) => {
           const hits = [...new Set(p.entries.flatMap((e) => exercises[e.exerciseId]?.mappings.map((m) => m.areaId) ?? []))].filter((a) => focus.has(a));
           return (
             <div className="list-item" key={p.id}>
@@ -297,6 +310,8 @@ function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout, onOpenExerci
           );
         })}
       </section>
+      </>
+      )}
 
       <ExerciseProgressList state={state} exercises={exercises} showAll={showAllProgress} onShowAll={() => setShowAllProgress(true)} onOpen={onOpenExercise} />
 
@@ -310,7 +325,8 @@ function WorkoutHome({ state, exercises, onOpenPlan, onOpenWorkout, onOpenExerci
               <span className="grow">
                 <span style={{ display: 'block', fontWeight: 600 }}>
                   {formatDay(w.date, todayKey())}
-                  {w.name ? ` · ${w.name}` : ''}
+                  {w.kind === 'rehab' ? ' · Rehab' : ''}
+                  {w.name && w.name !== 'Rehab' ? ` · ${w.name}` : ''}
                 </span>
                 <span className="small muted" style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {w.entries.length} exercise{w.entries.length === 1 ? '' : 's'} · {sets} set{sets === 1 ? '' : 's'} ·{' '}
@@ -360,6 +376,7 @@ function Session({ state, workout, exercises, injured, onOpenExercise, onAdd, on
 }) {
   const now = useNow(30_000);
   const [naming, setNaming] = useState(false);
+  const injury = workout.injuryId ? state.injuries.find((i) => i.id === workout.injuryId) : undefined;
   const doneSets = workout.entries.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0);
   const gains = workoutGains(workout, exercises);
 
@@ -398,7 +415,7 @@ function Session({ state, workout, exercises, injured, onOpenExercise, onAdd, on
             </button>
           )}
           <p className="sub">
-            In progress · {formatDuration(now - workout.startedAt)} · {doneSets} set{doneSets === 1 ? '' : 's'} done
+            {workout.kind === 'rehab' ? `Rehab${injury ? ` · ${injuryTitle(injury)}` : ''} · ` : ''}In progress · {formatDuration(now - workout.startedAt)} · {doneSets} set{doneSets === 1 ? '' : 's'} done
           </p>
         </div>
       </header>
@@ -430,7 +447,8 @@ function Session({ state, workout, exercises, injured, onOpenExercise, onAdd, on
                 <button className="link-title" onClick={() => ex && onOpenExercise(ex.id)} aria-label={`${ex?.name}: progress`}>
                   <h3 style={{ margin: 0 }}>{ex?.name ?? 'Deleted exercise'}</h3>
                 </button>
-                <InjuryWarning areas={injuredAreasWorked(ex, injured)} />
+                {/* In a rehab session the exercises are meant for the injury, so no warning. */}
+                {workout.kind !== 'rehab' && <InjuryWarning areas={injuredAreasWorked(ex, injured)} />}
                 <div className="small muted">
                   {last
                     ? `Last time (${formatDay(last.workout.date, workout.date).toLowerCase()}): ${formatSets(ex, last.entry.sets.filter((s) => s.done))}`
@@ -447,7 +465,7 @@ function Session({ state, workout, exercises, injured, onOpenExercise, onAdd, on
                 {Icon.trash}
               </button>
             </div>
-            {ex?.hint && <p className="small muted" style={{ margin: '4px 0 0' }}>{ex.hint}</p>}
+            {e.note ? <div className="entry-note">{e.note}</div> : ex?.hint && <p className="small muted" style={{ margin: '4px 0 0' }}>{ex.hint}</p>}
             <SetRows
               ex={ex}
               sets={e.sets}
@@ -461,7 +479,7 @@ function Session({ state, workout, exercises, injured, onOpenExercise, onAdd, on
       })}
 
       <button className="btn ghost block" style={{ marginBottom: 8 }} onClick={onAdd}>+ Add exercise</button>
-      <button className="btn block" onClick={finish}>Finish workout</button>
+      <button className="btn block" onClick={finish}>{workout.kind === 'rehab' ? 'Finish rehab' : 'Finish workout'}</button>
       <button
         className="btn danger block"
         style={{ marginTop: 8 }}
@@ -491,6 +509,8 @@ function Summary({ state, body, workout, exercises, onDone }: {
 }) {
   const [planName, setPlanName] = useState(workout.name ?? '');
   const [saved, setSaved] = useState(false);
+  const [painNow, setPainNow] = useState<number | null>(null);
+  const rehabInjury = workout.kind === 'rehab' && workout.injuryId ? state.injuries.find((i) => i.id === workout.injuryId) : undefined;
   const gains = workoutGains(workout, exercises);
   const pbs = personalBests(workout, state.workouts, exercises);
   const sets = workout.entries.reduce((n, e) => n + e.sets.length, 0);
@@ -500,7 +520,7 @@ function Summary({ state, body, workout, exercises, onDone }: {
     <>
       <header className="topbar">
         <div>
-          <h1>Workout complete</h1>
+          <h1>{workout.kind === 'rehab' ? 'Rehab complete' : 'Workout complete'}</h1>
           <p className="sub">
             {formatDuration((workout.finishedAt ?? Date.now()) - workout.startedAt)} · {workout.entries.length} exercise
             {workout.entries.length === 1 ? '' : 's'} · {sets} sets
@@ -513,6 +533,29 @@ function Summary({ state, body, workout, exercises, onDone }: {
         <div className="stat"><div className="value">+{coinsToday}</div><div className="label">coins today</div></div>
         <div className="stat"><div className="value">{pbs.length}</div><div className="label">personal bests</div></div>
       </div>
+
+      {rehabInjury && (
+        <section className="card injury-card">
+          <h3>How's your {injuryTitle(rehabInjury).toLowerCase()} now?</h3>
+          <div className="pain-row" role="group" aria-label="Pain now, 0 to 10">
+            {Array.from({ length: 11 }, (_, n) => (
+              <button
+                key={n}
+                aria-pressed={painNow === n}
+                aria-label={`Pain ${n} out of 10`}
+                onClick={() => {
+                  actions.logPain(rehabInjury.id, n);
+                  setPainNow(n);
+                  toast(`Pain ${n}/10 logged`);
+                }}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="small muted" style={{ margin: '8px 0 0' }}>Logged to your pain trend for this injury.</p>
+        </section>
+      )}
 
       {pbs.length > 0 && (
         <section className="card">
@@ -618,6 +661,7 @@ function PlanEditor({ plan, exercises, canStart, onBack, onAdd, onStart }: {
                 </button>
               </span>
             </div>
+            {e.note && <div className="entry-note">{e.note}</div>}
             <SetRows
               ex={ex}
               sets={e.sets}
@@ -778,6 +822,63 @@ function ExerciseProgressList({ state, exercises, showAll, onShowAll, onOpen }: 
           </button>
         )}
       </section>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rehab: plans made with the physio assistant (or by hand), per injury
+// ---------------------------------------------------------------------------
+
+function RehabStart({ state, exercises, onOpenPlan }: {
+  state: AppState;
+  exercises: Record<string, Exercise>;
+  onOpenPlan: (id: string) => void;
+}) {
+  const today = todayKey();
+  const rehabPlans = state.plans.filter((p) => p.kind === 'rehab');
+  const active = state.injuries.filter((i) => injuryActiveOn(i, today));
+  const injuryOf = (id?: string) => state.injuries.find((i) => i.id === id);
+
+  return (
+    <>
+      <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
+        {rehabPlans.length === 0 && (
+          <p className="small muted" style={{ padding: '10px 0', margin: 0 }}>
+            No rehab plans yet. On the Injuries tab, open an injury and ask the physio assistant. When you agree on exercises, save them as a
+            rehab plan and they'll appear here.
+          </p>
+        )}
+        {rehabPlans.map((p) => {
+          const inj = injuryOf(p.injuryId);
+          return (
+            <div className="list-item" key={p.id}>
+              <button className="grow" style={{ all: 'unset', cursor: 'pointer', flex: 1, minWidth: 0 }} onClick={() => onOpenPlan(p.id)}>
+                <div style={{ fontWeight: 600 }}>{p.name}</div>
+                <div className="small" style={{ color: 'var(--danger)' }}>{inj ? injuryTitle(inj) : 'Injury removed'}{inj?.resolvedDate ? ' (recovered)' : ''}</div>
+                <div className="small muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.entries.length} exercise{p.entries.length === 1 ? '' : 's'} · {planSummary(p, exercises) || 'empty'}
+                </div>
+              </button>
+              <button className="btn small" disabled={p.entries.length === 0} onClick={() => actions.startWorkout({ planId: p.id })}>Start</button>
+            </div>
+          );
+        })}
+      </section>
+
+      {active.length > 0 && (
+        <>
+          <h2 className="section-title">Blank rehab session</h2>
+          <section className="card" style={{ paddingTop: 4, paddingBottom: 4 }}>
+            {active.map((inj) => (
+              <div className="list-item" key={inj.id}>
+                <span className="grow" style={{ fontWeight: 600 }}>{injuryTitle(inj)}</span>
+                <button className="btn ghost small" onClick={() => actions.startRehab(inj.id)}>Start</button>
+              </div>
+            ))}
+          </section>
+        </>
+      )}
     </>
   );
 }

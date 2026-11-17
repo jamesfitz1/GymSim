@@ -535,7 +535,7 @@ function workoutGains(w: Workout, exercises: Record<string, Exercise>) {
   for (const e of w.entries) {
     const ex = exercises[e.exerciseId];
     if (!ex) continue;
-    for (const [a, g] of Object.entries(entryGains(ex, e.sets))) total[a] = (total[a] ?? 0) + g;
+    for (const [a, g] of Object.entries(entryGains(ex, e.sets, w.kind))) total[a] = (total[a] ?? 0) + g;
   }
   return Object.entries(total).sort((a, b) => b[1] - a[1]);
 }

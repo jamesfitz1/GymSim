@@ -134,6 +134,27 @@ describe('replay: levels and decay', () => {
     expect(high.levels.quads).toBeGreaterThan(85);
   });
 
+  it('caps mobility areas lower than strength or cardio on a big day', () => {
+    const logs = Array.from({ length: 6 }, () => log('doorway-chest-stretch', TODAY, { minutes: 10 }));
+    const b = computeBody(state({ logs }), EX, TODAY);
+    expect(b.levels.shoulderMobility).toBeCloseTo(TUNING.startLevel + TUNING.dailyGainCapByFade.mobility * headroom(TUNING.startLevel));
+    expect(TUNING.dailyGainCapByFade.strength).toBe(35);
+  });
+
+  it('scores rehab sessions at the reduced rehab rate', () => {
+    const one = [log('wall-angels', TODAY, { sets: 1, reps: 10 })]; // under the mobility cap
+    const normal = computeBody(state({ logs: one }), EX, TODAY);
+    const rehabState = state({ logs: one });
+    rehabState.workouts = rehabState.workouts.map((w) => ({ ...w, kind: 'rehab' as const }));
+    const rehab = computeBody(rehabState, EX, TODAY);
+    const gain = (b: typeof normal) => b.levels.shoulderMobility - TUNING.startLevel;
+    expect(gain(rehab)).toBeCloseTo(gain(normal) * TUNING.rehabPointsFactor);
+    // The live session preview uses the same rate.
+    const w = rehabState.workouts[0];
+    const preview = entryGains(EX['wall-angels'], w.entries[0].sets, 'rehab').shoulderMobility;
+    expect(preview).toBeCloseTo(entryGains(EX['wall-angels'], w.entries[0].sets).shoulderMobility * TUNING.rehabPointsFactor);
+  });
+
   it('caps the daily gain, and stronger areas gain less', () => {
     const logs = Array.from({ length: 6 }, () => log('running', TODAY, { minutes: 50 }));
     const b = computeBody(state({ logs }), EX, TODAY);

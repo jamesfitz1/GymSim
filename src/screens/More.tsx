@@ -354,7 +354,7 @@ function FitbitSettings({ state }: { state: AppState }) {
     <section className="card">
       <p className="small muted" style={{ marginTop: 0 }}>
         Pulls your daily steps from Fitbit through Google (Fitbit accounts now live on Google). Steps add up to {TUNING.stepsDailyMax} points a day to Aerobic
-        base, and hitting your goal earns coins. Your Google sign-in stays on this device; steps are saved with your profile.
+        base (plus a little to calves, glutes and hip mobility), and hitting your goal earns coins. Your Google sign-in stays on this device; steps are saved with your profile.
       </p>
 
       {connected ? (

@@ -62,8 +62,11 @@ export const TUNING = {
   curve: 0.7,
   /** Doing more than this multiple of a standard session earns nothing extra. */
   maxRatio: 2.5,
-  /** Most an area can gain in one day, however much is logged. */
+  /** Most an area can gain in one day, however much is logged (mobility moves fastest, so it's capped lower). */
   dailyGainCap: 35,
+  dailyGainCapByFade: { strength: 35, cardio: 35, mobility: 15 } as Record<'strength' | 'cardio' | 'mobility', number>,
+  /** Rehab sessions use deliberately light doses, so they earn this share of normal points. */
+  rehabPointsFactor: 0.35,
   /** Load multiplier for weighted lifts: 1 + min(kg, loadCapKg) / loadDivisor (max 1.5×). */
   loadCapKg: 120,
   loadDivisor: 240,
@@ -86,6 +89,8 @@ export const TUNING = {
   stepsFloor: 3000,
   stepsPerPoint: 1000,
   stepsDailyMax: 8,
+  /** Walking also gives these areas a small share of the step points (aerobic base keeps the full amount). */
+  stepsAreaShare: { calves: 0.25, glutes: 0.1, hipMobility: 0.05 } as Record<string, number>,
   defaultStepGoal: 8000,
   /** An exercise "works" an injured area if it puts at least this weight on it. */
   injuryWarnWeight: 0.2,

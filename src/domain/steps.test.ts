@@ -33,13 +33,21 @@ describe('steps', () => {
     expect(stepPoints(30000)).toBe(TUNING.stepsDailyMax);
   });
 
-  it('raises only aerobic base and does not count as a training day', () => {
+  it('raises aerobic base, nudges calves, glutes and hip mobility, and is not a training day', () => {
     const plain = computeBody(state(), exercises, today);
     const steps: Record<string, number> = {};
     for (let i = 0; i <= 10; i++) steps[addDays(today, -i)] = 10000;
     const walked = computeBody(state({ steps }), exercises, today);
-    expect(walked.levels.aerobic).toBeGreaterThan(plain.levels.aerobic + 5);
-    for (const a of SUB_AREAS) if (a.id !== 'aerobic') expect(walked.levels[a.id]).toBeCloseTo(plain.levels[a.id]);
+    const rise = (id: string) => walked.levels[id] - plain.levels[id];
+    expect(rise('aerobic')).toBeGreaterThan(5);
+    expect(rise('calves')).toBeGreaterThan(0);
+    expect(rise('calves')).toBeLessThan(rise('aerobic'));
+    expect(rise('glutes')).toBeGreaterThan(0);
+    expect(rise('glutes')).toBeLessThan(rise('calves'));
+    expect(rise('hipMobility')).toBeGreaterThan(0);
+    expect(rise('hipMobility')).toBeLessThan(rise('glutes'));
+    const nudged = new Set(['aerobic', ...Object.keys(TUNING.stepsAreaShare)]);
+    for (const a of SUB_AREAS) if (!nudged.has(a.id)) expect(walked.levels[a.id]).toBeCloseTo(plain.levels[a.id]);
     expect(walked.streak).toBe(0);
     expect(walked.trainingDays).toBe(0);
   });

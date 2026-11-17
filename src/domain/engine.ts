@@ -52,10 +52,14 @@ export function gainsFromUnits(ex: Exercise, units: number): Record<string, numb
   return out;
 }
 
-/** Area points for one exercise entry in a workout (ticked sets only). */
-export function entryGains(ex: Exercise, sets: SetEntry[]): Record<string, number> {
-  return gainsFromUnits(ex, entryUnits(ex, sets));
+/** Area points for one exercise entry in a workout (ticked sets only). Rehab sessions earn a reduced share. */
+export function entryGains(ex: Exercise, sets: SetEntry[], kind?: Workout['kind']): Record<string, number> {
+  const gains = gainsFromUnits(ex, entryUnits(ex, sets));
+  if (kind === 'rehab') for (const a of Object.keys(gains)) gains[a] *= TUNING.rehabPointsFactor;
+  return gains;
 }
+
+const REHAB_KEY = 'rehab:';
 
 // Convenience forms taking "sets × reps @ kg" or minutes in one object.
 export function sessionUnits(ex: Exercise, log: LogLike): number {
@@ -71,7 +75,10 @@ export function areaGains(ex: Exercise, log: LogLike): Record<string, number> {
   return gainsFromUnits(ex, sessionUnits(ex, log));
 }
 
-/** Total units per exercise per day, from every workout's ticked sets. */
+/**
+ * Total units per exercise per day, from every workout's ticked sets.
+ * Rehab entries are kept under `rehab:<exerciseId>` so they can be scored at the rehab rate.
+ */
 export function unitsByDay(workouts: Workout[], exercises: Record<string, Exercise>) {
   const byDay = new Map<string, Map<string, number>>();
   for (const w of workouts) {
@@ -81,7 +88,8 @@ export function unitsByDay(workouts: Workout[], exercises: Record<string, Exerci
       const u = entryUnits(ex, e.sets);
       if (u <= 0) continue;
       const day = byDay.get(w.date) ?? new Map<string, number>();
-      day.set(e.exerciseId, (day.get(e.exerciseId) ?? 0) + u);
+      const key = w.kind === 'rehab' ? REHAB_KEY + e.exerciseId : e.exerciseId;
+      day.set(key, (day.get(key) ?? 0) + u);
       byDay.set(w.date, day);
     }
   }
@@ -159,6 +167,7 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
   const lastTrained: Record<string, string | undefined> = {};
   for (const a of SUB_AREAS) levels[a.id] = state.startLevels?.[a.id] ?? TUNING.startLevel;
 
+  const dailyCap = Object.fromEntries(SUB_AREAS.map((a) => [a.id, TUNING.dailyGainCapByFade[a.fade]]));
   const ledger: CoinEntry[] = [];
   const stepGoal = stepGoalOf(settings.stepGoal);
   const recent: BodyState['recent'] = [];
@@ -194,19 +203,26 @@ export function computeBody(state: AppState, exercises: Record<string, Exercise>
     // 1. Gains from today's logs, capped per area per day.
     const dayUnits = day <= today ? logsByDay.get(day) : undefined;
     const dayGain: Record<string, number> = {};
-    for (const [exerciseId, units] of dayUnits ?? []) {
-      const ex = exercises[exerciseId];
+    for (const [key, units] of dayUnits ?? []) {
+      const rehab = key.startsWith(REHAB_KEY);
+      const ex = exercises[rehab ? key.slice(REHAB_KEY.length) : key];
+      const factor = rehab ? TUNING.rehabPointsFactor : 1;
       for (const [areaId, g] of Object.entries(gainsFromUnits(ex, units))) {
         if (!(areaId in levels)) continue;
-        dayGain[areaId] = (dayGain[areaId] ?? 0) + g;
+        dayGain[areaId] = (dayGain[areaId] ?? 0) + g * factor;
       }
     }
     // Walking: synced steps add to aerobic base (within the same daily cap).
     const daySteps = state.steps?.[day];
     const walk = stepPoints(daySteps);
-    if (walk > 0 && 'aerobic' in levels) dayGain.aerobic = (dayGain.aerobic ?? 0) + walk;
+    if (walk > 0) {
+      if ('aerobic' in levels) dayGain.aerobic = (dayGain.aerobic ?? 0) + walk;
+      for (const [areaId, share] of Object.entries(TUNING.stepsAreaShare)) {
+        if (areaId in levels) dayGain[areaId] = (dayGain[areaId] ?? 0) + walk * share;
+      }
+    }
     for (const [areaId, raw] of Object.entries(dayGain)) {
-      const g = Math.min(raw, TUNING.dailyGainCap);
+      const g = Math.min(raw, dailyCap[areaId] ?? TUNING.dailyGainCap);
       if (g <= 0) continue;
       // Harder to improve an area that's already strong.
       levels[areaId] = clamp(levels[areaId] + g * headroom(levels[areaId]), 0, TUNING.maxLevel);
